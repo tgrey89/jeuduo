@@ -328,7 +328,7 @@ verifier("l'invité crédite les points marqués",
   /if \(m\.s\[j\] > ancienScore\[j\]\) noterPoint\(j\)/.test(script));
 verifier("l'invité remet ses compteurs à zéro au début du match",
   /apres === "vs"\)\{[\s\S]{0,120}recordEnCours = \{/.test(script));
-verifier("records échangés en fin de match", /t: "rec", r: lireRecords\(\)/.test(script) && /case "rec":/.test(script));
+verifier("records échangés en fin de match", /t: "rec", r: Object\.assign\(\{\}, lireRecords\(\), lireBilan\(\)\)/.test(script) && /case "rec":/.test(script));
 verifier("tableau comparatif", /function majRecordsVoile\(/.test(script) && /id="voileRecords"/.test(html));
 {
   /* la remontée ne se crédite qu'au vainqueur */
@@ -858,6 +858,58 @@ titre("N. Cri de victoire et décompte");
     /id="btnCriMenu"/.test(html) && /btnCriMenu"\)\.addEventListener\("click", enregistrerCri\)/.test(script));
   verifier("le menu dit si un cri est déjà enregistré",
     /function majBoutonCri/.test(script) && /criLocal \? "✓" : "🎙"/.test(script));
+}
+
+/* ============ CLASSEMENTS ET AVATARS ============ */
+titre("N. Classements et avatars");
+{
+  const F = new Function("localStorage",
+    extraire(/function titreDuel\(v, d\)\{[\s\S]*?\n\}/, "titreDuel") + "\n" +
+    extraire(/function graineNom\(nom\)\{[\s\S]*?\n\}/, "graineNom") + "\n" +
+    extraire(/function monstreSVG\(nom\)\{[\s\S]*?\n\}/, "monstreSVG") + "\n" +
+    extraire(/function tousLesDuels\(\)\{[\s\S]*?\n\}/, "tousLesDuels") + "\n" +
+    "return { titreDuel, graineNom, monstreSVG, tousLesDuels };");
+
+  const faux = {
+    _d: { "duo_duels_KEMAL": '{"v":4,"d":2,"s":1}', "duo_duels_LEA": '{"v":0,"d":5,"s":-5}',
+          "duo_nom": "MOI", "duo_duels_VIDE": '{"v":0,"d":0}' },
+    get length(){ return Object.keys(this._d).length; },
+    key(i){ return Object.keys(this._d)[i]; },
+    getItem(k){ return this._d[k] === undefined ? null : this._d[k]; },
+  };
+  const api = F(faux);
+
+  const duels = api.tousLesDuels();
+  verifier("le face-à-face rassemble tous les adversaires",
+    duels.length === 2 && duels[0].nom === "KEMAL", duels.map(d => d.nom).join(", "));
+  verifier("un adversaire jamais affronté ne figure pas au face-à-face",
+    !duels.some(d => d.nom === "VIDE"));
+  verifier("les clés étrangères au duel sont ignorées",
+    !duels.some(d => d.nom === "MOI" || d.nom === "nom"));
+
+  verifier("le titre distingue la domination de l'équilibre",
+    api.titreDuel(4, 0) === "INVAINCU" && api.titreDuel(0, 5) === "JAMAIS BATTU CELUI-LÀ" &&
+    api.titreDuel(3, 3) === "À COUTEAUX TIRÉS");
+  /* Deux parties ne suffisent pas à décerner un titre : sinon tout le monde
+     est « bête noire » de tout le monde au bout d'un soir. */
+  verifier("aucun titre n'est décerné avant trois duels",
+    api.titreDuel(1, 0).indexOf("TROP TÔT") === 0 && api.titreDuel(1, 1).indexOf("TROP TÔT") === 0);
+
+  /* Le monstre doit être stable : sinon on change de tête à chaque écran. */
+  verifier("le même nom rend toujours le même monstre",
+    api.monstreSVG("KEMAL") === api.monstreSVG("kemal"));
+  verifier("deux noms différents rendent deux monstres différents",
+    api.monstreSVG("KEMAL") !== api.monstreSVG("LÉA"));
+  verifier("le monstre est une image autonome, sans fichier",
+    api.monstreSVG("X").indexOf("data:image/svg+xml") === 0);
+  verifier("un nom vide a quand même une tête", api.monstreSVG("").length > 200);
+
+  const MIN = nombre("MIN_PARTIES");
+  verifier("le taux de victoire exige un plancher de parties", MIN >= 5, MIN + " parties");
+  verifier("victoires et parties voyagent avec le palmarès",
+    /"echange", "serie", "remontee", "relais", "v", "j"/.test(script));
+  verifier("une partie n'est comptée qu'en réseau",
+    /if \(!modeSolo\) noterPartie\(jAiGagne\)/.test(script));
 }
 
 /* ======================= RÉSULTAT ======================= */

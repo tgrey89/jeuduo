@@ -350,3 +350,4 @@ entre proches.
 | 14.9 | L'IA parle aussi en fin de manche, musique écartée le temps de la phrase |
 | 15.0 | Cri de victoire de 1,5 s enregistré au départ, décompte 3·2·1 et mot de lancement |
 | 15.1 | Le mot n'ouvre que la manche ; le cri s'enregistre depuis le menu, à côté de la photo |
+| 15.2 | Palmarès : victoires, taux, face-à-face agrégé avec titres ; avatars monstres procéduraux |

@@ -686,7 +686,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.1";
+const VERSION = "15.2";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -1782,6 +1782,49 @@ function afficherPalmares(){
     });
     zone.appendChild(bloc);
   }
+
+  const taux = classementTaux();
+  if (taux.length){
+    rempli = true;
+    const bloc = document.createElement("div");
+    const t = document.createElement("div");
+    t.className = "palmCat";
+    t.textContent = "TAUX DE VICTOIRE · " + MIN_PARTIES + " PARTIES MINIMUM";
+    bloc.appendChild(t);
+    taux.forEach((r, i) => {
+      const l = document.createElement("div");
+      l.className = "palmRang" + (r.nom === monNom.toUpperCase() ? " moi" : "");
+      const p = document.createElement("span"); p.className = "pos"; p.textContent = (i+1) + ".";
+      const n = document.createElement("span"); n.className = "nom"; n.textContent = r.nom;
+      const v = document.createElement("span"); v.className = "val";
+      v.textContent = r.v + " % sur " + r.j;
+      l.appendChild(p); l.appendChild(n); l.appendChild(v);
+      bloc.appendChild(l);
+    });
+    zone.appendChild(bloc);
+  }
+
+  const duels = tousLesDuels();
+  if (duels.length){
+    rempli = true;
+    const bloc = document.createElement("div");
+    const t = document.createElement("div");
+    t.className = "palmCat";
+    t.textContent = "FACE-À-FACE · VÉCU, PAS DÉCLARÉ";
+    bloc.appendChild(t);
+    duels.slice(0, 8).forEach(d => {
+      const l = document.createElement("div");
+      l.className = "palmRang";
+      const n = document.createElement("span"); n.className = "nom";
+      n.textContent = d.nom + " — " + titreDuel(d.v, d.d);
+      const v = document.createElement("span"); v.className = "val";
+      v.textContent = d.v + " – " + d.d;
+      l.appendChild(n); l.appendChild(v);
+      bloc.appendChild(l);
+    });
+    zone.appendChild(bloc);
+  }
+
   carte.style.display = rempli ? "" : "none";
 }
 
@@ -2080,6 +2123,7 @@ const LIBELLES = {
   serie:    { court: "MEILLEURE SÉRIE",   unite: n => n + " points de suite" },
   remontee: { court: "PLUS BELLE REMONTÉE", unite: n => n + " points de retard comblés" },
   relais:   { court: "RECORD EN RELAIS",  unite: n => n + " échanges tenus à deux" },
+  v:        { court: "VICTOIRES",         unite: n => n + (n > 1 ? " victoires" : " victoire") },
 };
 /* ================= PALMARÈS =================
    Aucun serveur : chaque appareil garde les meilleurs scores connus par nom de
@@ -2088,6 +2132,98 @@ const LIBELLES = {
    tu joues contre Kemal qui a joué contre Léa, tu récupères le score de Léa.
    C'est déclaratif, donc ça vaut ce que vaut la bonne foi du cercle — ce qui
    convient parfaitement à un jeu entre proches. */
+/* ---------- bilan personnel : victoires et parties jouées ----------
+   Compté sur mon seul appareil, puis propagé avec le palmarès. Comme le reste
+   du palmarès c'est déclaratif : chacun annonce ses chiffres. Le face-à-face
+   plus bas, lui, ne dépend d'aucune bonne foi — je l'ai vécu. */
+function lireBilan(){
+  try{ return Object.assign({ v: 0, j: 0 }, JSON.parse(localStorage.getItem("duo_bilan")) || {}); }
+  catch(e){ return { v: 0, j: 0 }; }
+}
+function noterPartie(gagnee){
+  const b = lireBilan();
+  b.j++; if (gagnee) b.v++;
+  try{ localStorage.setItem("duo_bilan", JSON.stringify(b)); }catch(e){}
+}
+
+/* ---------- face-à-face, tous adversaires confondus ----------
+   Les compteurs par adversaire existent déjà, un par clé. On les rassemble
+   pour en tirer un tableau du cercle. */
+function tousLesDuels(){
+  const out = [];
+  try{
+    for (let i = 0; i < localStorage.length; i++){
+      const cle = localStorage.key(i);
+      if (!cle || cle.indexOf("duo_duels_") !== 0) continue;
+      const nom = cle.slice(10);
+      if (!nom) continue;
+      const s = JSON.parse(localStorage.getItem(cle)) || {};
+      const v = s.v || 0, d = s.d || 0;
+      if (v + d > 0) out.push({ nom: nom, v: v, d: d, s: s.s || 0 });
+    }
+  }catch(e){}
+  return out.sort((a, b) => (b.v + b.d) - (a.v + a.d));
+}
+
+/* Un titre vaut mieux qu'une colonne de chiffres : c'est ce qu'on relit. */
+function titreDuel(v, d){
+  const t = v + d;
+  if (t < 3) return "TROP TÔT POUR LE DIRE";
+  if (d === 0) return "INVAINCU";
+  if (v === 0) return "JAMAIS BATTU CELUI-LÀ";
+  const r = v / t;
+  if (r >= 0.75) return "BÊTE NOIRE";
+  if (r >= 0.6)  return "ASCENDANT";
+  if (r > 0.4)   return "À COUTEAUX TIRÉS";
+  if (r > 0.25)  return "EN DIFFICULTÉ";
+  return "PROIE";
+}
+
+/* ---------- avatars : un monstre dessiné à partir du nom ----------
+   Aucun fichier. Le même nom rend toujours le même monstre, ce qui donne une
+   tête même aux joueurs reçus par ricochet, dont on n'aura jamais la photo. */
+function graineNom(nom){
+  let h = 2166136261;
+  const s = (nom || "?").toUpperCase();
+  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function monstreSVG(nom){
+  let g = graineNom(nom);
+  const suivant = () => { g = (Math.imul(g, 1664525) + 1013904223) >>> 0; return g / 4294967296; };
+  const teinte = Math.floor(suivant() * 360);
+  const corps = "hsl(" + teinte + ",70%,58%)";
+  const ombre = "hsl(" + ((teinte + 28) % 360) + ",65%,34%)";
+  const yeux = 1 + Math.floor(suivant() * 3);
+  const cornes = Math.floor(suivant() * 3);
+  const rond = 26 + Math.floor(suivant() * 22);
+  const dents = suivant() > 0.5;
+  let p = "";
+  for (let i = 0; i < cornes; i++){
+    const x = 26 + i * (48 / Math.max(1, cornes)) + 8;
+    p += '<path d="M' + x + ' 26 L' + (x + 7) + ' 8 L' + (x + 14) + ' 26 Z" fill="' + ombre + '"/>';
+  }
+  p += '<rect x="16" y="22" width="68" height="62" rx="' + rond + '" fill="' + corps + '"/>';
+  for (let i = 0; i < yeux; i++){
+    const x = 50 + (i - (yeux - 1) / 2) * (yeux > 1 ? 20 : 0);
+    const y = 48 + (suivant() * 6 - 3);
+    p += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="8" fill="#0A0E18"/>';
+    p += '<circle cx="' + (x + 2).toFixed(1) + '" cy="' + (y - 2).toFixed(1) + '" r="3" fill="#EAF0FF"/>';
+  }
+  p += '<rect x="36" y="66" width="28" height="' + (dents ? 9 : 5) + '" rx="3" fill="#0A0E18"/>';
+  if (dents) p += '<rect x="42" y="66" width="4" height="5" fill="#EAF0FF"/><rect x="54" y="66" width="4" height="5" fill="#EAF0FF"/>';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+              '<rect width="100" height="100" fill="#080C16"/>' + p + '</svg>';
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+/* Photo si elle existe, monstre sinon : on ne laisse plus de « ? ». */
+function avatarPour(photo, nom){ return photo || monstreSVG(nom); }
+function poserAvatar(el, photo, nom){
+  if (!el) return;
+  el.innerHTML = '<img alt="">';
+  el.querySelector("img").src = avatarPour(photo, nom);
+}
+
 const PALMARES_MAX = 24;
 function lirePalmares(){
   try{ return JSON.parse(localStorage.getItem("duo_palmares")) || {}; }catch(e){ return {}; }
@@ -2111,7 +2247,7 @@ function fusionnerPalmares(nom, records){
   if (!n || !records) return;
   const p = lirePalmares();
   const a = p[n] || {};
-  for (const cle of ["echange", "serie", "remontee", "relais"])
+  for (const cle of ["echange", "serie", "remontee", "relais", "v", "j"])
     a[cle] = Math.max(a[cle] || 0, records[cle] || 0);
   a.maj = Date.now();
   p[n] = a;
@@ -2123,7 +2259,18 @@ function absorberPalmares(recu){
     fusionnerPalmares(nom, recu[nom]);
 }
 /* on s'inscrit soi-même, pour figurer dans son propre classement */
-function inscrireMesRecords(){ fusionnerPalmares(monNom, lireRecords()); }
+function inscrireMesRecords(){ fusionnerPalmares(monNom, Object.assign({}, lireRecords(), lireBilan())); }
+
+/* Le taux sans plancher couronne celui qui a gagné son unique partie. */
+const MIN_PARTIES = 5;
+function classementTaux(){
+  const p = lirePalmares();
+  return Object.keys(p)
+    .filter(n => (p[n].j || 0) >= MIN_PARTIES)
+    .map(n => ({ nom: n, v: Math.round((p[n].v || 0) / p[n].j * 100), j: p[n].j }))
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 5);
+}
 
 function classement(cle){
   const p = lirePalmares();
@@ -2181,9 +2328,7 @@ function texteDuels(){
 /* ================= PHOTO DE PROFIL ================= */
 let maPhoto = null, photoAdverse = null, fluxCam = null;
 function majVignette(){
-  const v = $("apercuPhoto");
-  v.innerHTML = maPhoto ? '<img alt="">' : "?";
-  if (maPhoto) v.querySelector("img").src = maPhoto;
+  poserAvatar($("apercuPhoto"), maPhoto, monNom || $("champNom").value || "JOUEUR");
 }
 (function initPhoto(){
   try{ const m = localStorage.getItem("duo_photo"); if (m) maPhoto = m; }catch(e){}
@@ -3542,11 +3687,9 @@ const DUREE_VS = 3200;
 function afficherVersus(){
   const nomAdv = nomAdverse || (modeSolo ? ("IA " + niveauIA.toUpperCase()) : "ADVERSAIRE");
   const pG = $("vsPhotoG"), pD = $("vsPhotoD");
-  pG.innerHTML = maPhoto ? '<img alt="">' : "?";
-  if (maPhoto) pG.querySelector("img").src = maPhoto;
-  pD.innerHTML = photoAdverse ? '<img alt="">' : (modeSolo ? "IA" : "?");
-  pD.style.fontFamily = photoAdverse ? "" : '"JetBrains Mono", monospace';
-  if (photoAdverse) pD.querySelector("img").src = photoAdverse;
+  poserAvatar(pG, maPhoto, monNom);
+  poserAvatar(pD, photoAdverse, nomAdv);
+  pD.style.fontFamily = "";
   const coop = cfgMode().coop;
   $("vsLogo").textContent = coop ? "&" : "VS";
   $("vsLogo").style.fontStyle = coop ? "normal" : "italic";
@@ -3775,6 +3918,7 @@ function afficherFin(){
   /* moqueuse quand elle gagne, rageuse quand elle perd */
   if (modeSolo) parlerIA(phraseF, jAiGagne ? "rageur" : "moqueur");
   const battus = cloturerRecords(jAiGagne);
+  if (!modeSolo) noterPartie(jAiGagne);
   if (!modeSolo) ajouterHistorique({
     d: Date.now(), a: nomAdverse || "ADVERSAIRE",
     m: [manches[moi], manches[1 - moi]], g: jAiGagne ? 1 : 0,
@@ -3788,7 +3932,7 @@ function afficherFin(){
     : "drop-shadow(0 0 20px rgba(124,138,165,.4))";
   if (!modeSolo){
     inscrireMesRecords();
-    envoyerFiable({ t: "rec", r: lireRecords(), n: monNom, p: lirePalmares() });
+    envoyerFiable({ t: "rec", r: Object.assign({}, lireRecords(), lireBilan()), n: monNom, p: lirePalmares() });
     afficherPalmares();
     majRecordsVoile();
   } else {
