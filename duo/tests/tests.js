@@ -807,6 +807,49 @@ titre("11. Cohérence de MEMOIRE.md avec le code");
     !/github_pat_|apiKey=|[A-Za-z0-9_-]{40,}/.test(consignes));
 }
 
+/* ================= CRI ET DÉCOMPTE ================= */
+titre("N. Cri de victoire et décompte");
+{
+  const etape = new Function("return " + extraire(/function etapeCompte\([\s\S]*?\n\}/, "etapeCompte") + "; etapeCompte")();
+  const mots = eval(extraire(/const MOTS_DEPART = \[[\s\S]*?\];/, "MOTS_DEPART").replace(/^const MOTS_DEPART = /, "").replace(/;$/, ""));
+  const LONG = nombre("DUREE_COMPTE_LONG");
+
+  verifier("le décompte long montre bien 3 puis 2 puis 1 puis le mot",
+    etape(LONG, true, "GO").texte === "3" && etape(2000, true, "GO").texte === "2" &&
+    etape(1000, true, "GO").texte === "1" && etape(300, true, "GO").texte === "GO");
+  verifier("le départ court n'affiche que le mot",
+    etape(700, false, "PÂTISSEZ").texte === "PÂTISSEZ" && etape(0, false, "GO").mot === true);
+  /* Chaque palier doit avoir son propre repère, sinon le bip du décompte
+     part à chaque image au lieu de partir une fois par chiffre. */
+  const tics = [LONG, 2000, 1000, 300].map(r => etape(r, true, "GO").tic);
+  verifier("chaque palier du décompte a un repère distinct",
+    new Set(tics).size === 4, tics.join(", "));
+  verifier("le décompte long dure assez pour trois chiffres et un mot",
+    LONG >= 2800, LONG + " ms");
+
+  verifier("PÂTISSEZ figure parmi les mots de départ", mots.indexOf("PÂTISSEZ") >= 0);
+  verifier("GO reste le mot le plus fréquent",
+    mots.filter(m => m === "GO").length >= 3 && mots.length >= 8,
+    mots.filter(m => m === "GO").length + " GO sur " + mots.length);
+  verifier("aucun mot de départ n'est trop long pour l'écran",
+    mots.every(m => m.length <= 10), mots.filter(m => m.length > 10).join(", "));
+
+  /* Le cri doit passer par l'AudioContext : un <audio> créé hors geste
+     utilisateur est refusé en silence par iOS — piège déjà payé. */
+  const srcCri = extraire(/function jouerCri\(q\)\{[\s\S]*?\n\}/, "jouerCri");
+  verifier("le cri passe par la chaîne audio débloquée", /jouerClip\(/.test(srcCri));
+  verifier("le cri joué est celui du marqueur",
+    /q === moiIdx/.test(srcCri) && /criLocal/.test(srcCri) && /criAdverse/.test(srcCri));
+  verifier("le marqueur voyage avec l'effet de but",
+    /fxLocal\("but"[^;]*\{ q: m\.qui \}\)/.test(script),
+    "sans lui, l'invité ne sait pas quel cri lancer");
+  verifier("le cri dure bien 1,5 s", nombre("DUREE_CRI") === 1500);
+  verifier("la parole après chaque point a bien disparu",
+    !/enregistrerEtEnvoyer/.test(script) && !/basculerMicro/.test(script));
+  verifier("le bouton micro enregistre le cri",
+    /btnMicToggle"\)\.addEventListener\("click", enregistrerCri\)/.test(script));
+}
+
 /* ======================= RÉSULTAT ======================= */
 console.log("\n" + "=".repeat(52));
 console.log("réussis : " + reussis + "   échoués : " + echoues);

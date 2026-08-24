@@ -577,7 +577,7 @@ canvas{
           <span class="regle" data-modes="arcade classique gravite"><b class="f">BALLE EN FEU</b> — 8 rebonds sans point : la balle s'enflamme à vitesse maximale.<br></span>
           <span class="regle" data-modes="tous"><b class="o">DÉCOR</b> — À partir de la manche 2, des blocs de la ligne médiane se détachent et dérivent au centre du terrain.<br></span>
           <span class="regle" data-modes="arcade classique gravite"><b class="f">DÉGÂTS</b> — Les frappes surpuissantes fissurent les murs : les rebonds y deviennent imprévisibles et des débris sont projetés sur le terrain jusqu'à la fin de la manche.<br></span>
-          <span class="regle" data-modes="tous"><b class="c">MICRO</b> — Icône 🎙 en bas à droite : une fois activée, votre micro s'ouvre 2 secondes après <i>chaque point</i> pour glisser un mot à l'adversaire. En solo, votre voix vous est rejouée : de quoi vérifier le son sans second appareil. Icône ♪ en bas à gauche : musique.<br></span>
+          <span class="regle" data-modes="tous"><b class="c">CRI</b> — Icône 🎙 en bas à droite, <i>avant</i> la partie : elle enregistre 1,5 s de votre voix. Ce cri part ensuite tout seul à chaque point que vous marquez, chez vous comme chez l'adversaire. Il vous est rejoué une fois à l'enregistrement, pour vérifier qu'il est audible. Icône ♪ en bas à gauche : musique.<br></span>
           <span class="regle" data-modes="arcade"><b class="v">VICES</b> — Le gagnant d'une manche choisit un vice <i>secret</i> : inversion, brouillard ou gravité. Il se déclenche tout seul, une seule fois, à un moment imprévisible d'une manche suivante — et frappe l'adversaire sans prévenir.</span>
         </div>
       <button id="btnLu">LU — JE SUIS PRÊT</button>
@@ -679,7 +679,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "14.9";
+const VERSION = "15.0";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -823,7 +823,13 @@ let modeJeu = "arcade";                 /* arcade par défaut */
 let choixArene = -1;                    /* -1 = tirage au sort à chaque match */
 let MANCHES_GAGNANTES = 2;              /* 2, 3 ou 5 */
 function cfgMode(){ return MODES[modeJeu] || MODES.arcade; }
-const TICK_ENVOI = 33, DUREE_COMPTE = 800;
+const TICK_ENVOI = 33, DUREE_COMPTE = 800, DUREE_COMPTE_LONG = 2800;
+/* Mots de départ. GO revient plus souvent que les autres : c'est le repère,
+   les autres sont la surprise. PÂTISSEZ est là pour la démission pâtissière. */
+const MOTS_DEPART = ["GO", "GO", "GO", "PÂTISSEZ", "DÉMOULEZ", "FOUETTEZ",
+                     "RÉGALEZ", "ENVOYEZ", "TAPEZ", "DÉGAGEZ", "SERVEZ", "FEU"];
+let motDepart = "GO", compteLong = false, dernierTic = -1;
+const DUREE_CRI = 1500;
 const MAX_BALLES = 3, MAX_BONUS = 2, INTERVALLE_BONUS = 3800;
 const DUREE_TAILLE = 8000, DUREE_FANTOME = 2600, DUREE_BOULE_FEU = 7000;
 const RAYON_BONUS = 15;
@@ -1207,24 +1213,6 @@ function relacherMicro(){
   try{ micStream.getTracks().forEach(p => p.stop()); }catch(e){}
   micStream = null;
 }
-async function basculerMicro(){
-  reveillerAudio();
-  if (micActif){ micActif = false; relacherMicro(); majIcones(); return; }
-  if (micAutorise){ micActif = true; majIcones(); return; }
-  try{
-    const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
-    /* Une capture ouverte bascule la sortie iOS sur l'écouteur d'oreille :
-       on relâche aussitôt et on ne rouvre que le temps des 2 s. */
-    flux.getTracks().forEach(p => p.stop());
-    micAutorise = true;
-    micActif = true;
-    annoncer("MICRO ACTIVÉ · 2 s APRÈS CHAQUE POINT", "#8AB4FF");
-  } catch(e){
-    micActif = false;
-    annoncer("MICRO REFUSÉ", "#F87171");
-  }
-  majIcones();
-}
 function majIcones(){
   const bp = document.getElementById("btnPause");
   if (bp){
@@ -1236,14 +1224,21 @@ function majIcones(){
   if (bm){ bm.classList.toggle("actif", musiqueOn); bm.classList.toggle("eteint", !musiqueOn); }
   if (bt){ bt.classList.toggle("actif", micActif); bt.classList.toggle("eteint", !micActif); }
 }
-async function enregistrerEtEnvoyer(){
-  if (!micActif || !micAutorise || enTrainDEnregistrer) return;
-  if (!modeSolo && (!connVoix || !connVoix.open)) return;
+/* ================= CRI DE VICTOIRE =================
+   Un seul clip de 1,5 s enregistré AVANT la partie, rejoué à chaque point
+   marqué par son propriétaire. Remplace la parole après chaque point, qui
+   ouvrait le micro toutes les vingt secondes et coupait le jeu pour rien. */
+let criLocal = null, criAdverse = null;
+
+async function enregistrerCri(){
+  if (enTrainDEnregistrer) return;
   const mt = mimeAudio();
-  if (!mt) return;
+  if (!mt){ annoncer("MICRO INDISPONIBLE", "#F87171"); return; }
+  reveillerAudio();
   enTrainDEnregistrer = true;
   try{ micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch(e){ enTrainDEnregistrer = false; return; }
+  catch(e){ enTrainDEnregistrer = false; annoncer("MICRO REFUSÉ", "#F87171"); return; }
+  micAutorise = true;
   const elMic = document.getElementById("micEtat");
   elMic.classList.remove("cache");
   const rec = new MediaRecorder(micStream, { mimeType: mt });
@@ -1255,27 +1250,39 @@ async function enregistrerEtEnvoyer(){
     relacherMicro();
     try{
       const blob = new Blob(morceaux, { type: mt });
-      if (blob.size <= 300 || blob.size >= 250000) return;
-      const buf = await blob.arrayBuffer();
-      if (modeSolo){
-        /* Écho local : emprunte exactement la chaîne de lecture des clips reçus
-           en réseau. Sert à valider le rendu sans second appareil.
-           Court délai pour laisser iOS rebasculer sur le haut-parleur. */
-        setTimeout(() => {
-          jouerClip(buf, mt);
-          annoncer("🎙 ÉCHO · VOUS DEVRIEZ VOUS ENTENDRE", "#8AB4FF");
-        }, 200);
-        return;
-      }
-      if (connVoix && connVoix.open) connVoix.send({ t: "vx", mt: mt, d: buf });
+      if (blob.size <= 300 || blob.size >= 250000){ annoncer("CRI TROP COURT", "#F87171"); return; }
+      criLocal = { mt: mt, buf: await blob.arrayBuffer() };
+      micActif = true; majIcones();
+      annoncer("CRI ENREGISTRÉ · IL PART À CHAQUE POINT", "#8AB4FF");
+      envoyerCri();
+      /* On le rejoue tout de suite : c'est le seul moment où l'on peut
+         constater qu'il est audible, avant que la partie ne commence. */
+      setTimeout(() => jouerCri(estHote ? 0 : 1), 250);
     } catch(e){}
   };
   rec.start();
-  setTimeout(() => { try{ rec.stop(); } catch(e){} }, 2000);
+  setTimeout(() => { try{ rec.stop(); } catch(e){} }, DUREE_CRI);
 }
+
+function envoyerCri(){
+  if (!criLocal || modeSolo) return;
+  if (connVoix && connVoix.open){
+    try{ connVoix.send({ t: "cri", mt: criLocal.mt, d: criLocal.buf }); }catch(e){}
+  }
+}
+
+/* q vaut 0 pour l'hôte, 1 pour l'invité — le même repère que etat.score. */
+function jouerCri(q){
+  const moiIdx = estHote ? 0 : 1;
+  const c = (q === moiIdx) ? criLocal : criAdverse;
+  if (!c || !c.buf) return;
+  jouerClip(c.buf, c.mt);
+}
+
 function recevoirFiable(m){
   if (!m) return;
   if (m.t === "ph" && m.d){ photoAdverse = m.d; return; }
+  if (m.t === "cri" && m.d){ criAdverse = { mt: m.mt || "audio/webm", buf: m.d }; return; }
   if (m.t !== "vx"){ recevoir(m); return; }   /* contrôle : même traitement */
   if (!m.d) return;
   jouerClip(m.d, m.mt || "audio/webm");
@@ -1701,8 +1708,8 @@ function gestionnaireConnexion(c){
     if (connVoix && connVoix.open){ try{ c.close(); }catch(e){} return; }
     connVoix = c;
     connVoix.on("data", recevoirFiable);
-    connVoix.on("open", () => { setTimeout(envoyerPhoto, 250); viderFilePrioritaire(); });
-    setTimeout(() => { envoyerPhoto(); viderFilePrioritaire(); }, 400);
+    connVoix.on("open", () => { setTimeout(envoyerPhoto, 250); setTimeout(envoyerCri, 400); viderFilePrioritaire(); });
+    setTimeout(() => { envoyerPhoto(); envoyerCri(); viderFilePrioritaire(); }, 400);
     return;
   }
   if (conn && conn.open){ try{ c.close(); }catch(e){} return; }   /* déjà en partie */
@@ -2418,7 +2425,7 @@ $("btnRejoindre").addEventListener("click", () => {
       /* canal séparé FIABLE pour la voix : l'audio ne tolère pas la perte de paquets */
       connVoix = peer.connect(PREFIXE + code, { reliable: true, label: "voix" });
       connVoix.on("data", recevoirFiable);
-      connVoix.on("open", () => { setTimeout(envoyerPhoto, 250); viderFilePrioritaire(); });
+      connVoix.on("open", () => { setTimeout(envoyerPhoto, 250); setTimeout(envoyerCri, 400); viderFilePrioritaire(); });
     });
     brancherConnexion();
     setTimeout(() => {
@@ -2562,7 +2569,7 @@ function demarrerPartie(){
 /* ================= RÈGLES — double validation ================= */
 
 document.getElementById("btnMusique").addEventListener("click", basculerMusique);
-document.getElementById("btnMicToggle").addEventListener("click", basculerMicro);
+document.getElementById("btnMicToggle").addEventListener("click", enregistrerCri);
 
 $("btnPlus").addEventListener("click", () => {
   const l = $("reglesListe"), ouvert = !l.classList.contains("cache");
@@ -2844,7 +2851,11 @@ function jouerFx(k, x, y, extra){
     annoncer("BLOC PULVÉRISÉ", "#FB923C");
     sonCasse(extra);
   }
-  if (k === "but"){ explosion(x, y, CO_BALLE, 40, 5.5); secousse = 10; flashBut = 1; sonBut(); couperMusiqueBref(); enregistrerEtEnvoyer(); }
+  if (k === "but"){
+    explosion(x, y, CO_BALLE, 40, 5.5); secousse = 10; flashBut = 1;
+    sonBut(); couperMusiqueBref();
+    jouerCri((extra && typeof extra === "object" && typeof extra.q === "number") ? extra.q : -1);
+  }
   if (k === "bonus"){
     const def = BONUS_DEFS[extra];
     if (def){
@@ -2883,7 +2894,12 @@ function nouvelleBalle(x, y, sens, dernier){
 function preparerService(sens){
   chargeLocal = 0; chargeHaut = 0;    /* la charge se mérite pendant l'échange */
   phase = "compte";
-  finCompte = performance.now() + DUREE_COMPTE;
+  /* Le 3·2·1 complet ouvre la manche ; entre deux points il serait pénible,
+     on garde alors le départ court avec le seul mot. */
+  compteLong = etat.score[0] === 0 && etat.score[1] === 0;
+  motDepart = MOTS_DEPART[Math.floor(Math.random() * MOTS_DEPART.length)];
+  dernierTic = -1;
+  finCompte = performance.now() + (compteLong ? DUREE_COMPTE_LONG : DUREE_COMPTE);
   sensService = sens;
   balles = []; bonusListe = [];
   rebondsEchange = 0; enFeu = false;
@@ -3364,7 +3380,7 @@ function physique(){
     etat.score[m.qui]++;
     noterPoint(m.qui);
     majScore(true);
-    fxLocal("but", m.b.x, Math.max(20, Math.min(HAUT-20, m.b.y)));
+    fxLocal("but", m.b.x, Math.max(20, Math.min(HAUT-20, m.b.y)), { q: m.qui });
   }
   if (aMarquer.length && !cfgMode().coop){
     if (etat.score[0] >= SCORE_MANCHE || etat.score[1] >= SCORE_MANCHE){
@@ -5332,13 +5348,36 @@ function dessinerBloc(o, yEcran, t){
   bloomCercle(o.x + o.l/2, yEcran, o.l * 0.85, A.accent, 0.28);
 }
 
+/* Choisit ce qui s'affiche : 3, 2, 1 puis le mot. Pure, donc vérifiable. */
+function etapeCompte(restant, long, mot){
+  if (!long) return { texte: mot, tic: 0, mot: true };
+  if (restant > 2100) return { texte: "3", tic: 3, mot: false };
+  if (restant > 1400) return { texte: "2", tic: 2, mot: false };
+  if (restant > 700)  return { texte: "1", tic: 1, mot: false };
+  return { texte: mot, tic: 0, mot: true };
+}
+
 function dessinerCompte(){
   const A = areneCourante();
+  const restant = Math.max(0, finCompte - performance.now());
+  const e = etapeCompte(restant, compteLong, motDepart);
+  if (e.tic !== dernierTic){
+    dernierTic = e.tic;
+    if (e.mot) sonGo(); else bip(440, 0.09, "square", 0.2);
+  }
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = "700 88px 'Space Grotesk', sans-serif";
-  ctx.fillStyle = "rgba(234,240,255,.85)";
-  ctx.shadowBlur = flou(30); ctx.shadowColor = CO_MOI;
-  ctx.fillText("GO", LARG/2, HAUT/2 - 90);
+  /* Le mot doit rester dans l'écran : PÂTISSEZ fait quatre fois GO. On part
+     de la taille voulue et on rétrécit jusqu'à ce qu'il tienne. */
+  let taille = e.mot ? 96 : 150;
+  ctx.font = "700 " + taille + "px 'Space Grotesk', sans-serif";
+  const large = LARG - 60;
+  while (taille > 30 && ctx.measureText(e.texte).width > large){
+    taille -= 4;
+    ctx.font = "700 " + taille + "px 'Space Grotesk', sans-serif";
+  }
+  ctx.fillStyle = "rgba(234,240,255,.9)";
+  ctx.shadowBlur = flou(34); ctx.shadowColor = e.mot ? A.accent : CO_MOI;
+  ctx.fillText(e.texte, LARG/2, HAUT/2 - 90);
   ctx.shadowBlur = flou(0);
   /* nom de l'arène : seulement au tout premier service de la manche (0-0) */
   if (modeJeu !== "classique" && etat.score[0] === 0 && etat.score[1] === 0){
