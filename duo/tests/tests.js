@@ -871,8 +871,9 @@ titre("N. Classements et avatars");
     "return { titreDuel, graineNom, monstreSVG, tousLesDuels };");
 
   const faux = {
-    _d: { "duo_duels_KEMAL": '{"v":4,"d":2,"s":1}', "duo_duels_LEA": '{"v":0,"d":5,"s":-5}',
-          "duo_nom": "MOI", "duo_duels_VIDE": '{"v":0,"d":0}' },
+    _d: { "duo_duels_j1": '{"v":4,"d":2,"s":1,"nom":"KEMAL"}',
+          "duo_duels_j2": '{"v":0,"d":5,"s":-5,"nom":"LEA"}',
+          "duo_nom": "MOI", "duo_duels_j3": '{"v":0,"d":0,"nom":"VIDE"}' },
     get length(){ return Object.keys(this._d).length; },
     key(i){ return Object.keys(this._d)[i]; },
     getItem(k){ return this._d[k] === undefined ? null : this._d[k]; },
@@ -932,6 +933,34 @@ titre("N. Classements et avatars");
     /\$\("champNom"\)\.addEventListener\("input", majVignette\)/.test(script));
   verifier("la vignette se refait quand le nom est validé",
     /localStorage\.setItem\("duo_nom", monNom\); \}catch\(e\)\{\}\s*\n\s*majVignette\(\);/.test(script));
+}
+
+{
+  /* Le nom est une étiquette, pas une clé : se renommer ne doit plus créer un
+     doublon au palmarès ni repartir de zéro au face-à-face. */
+  verifier("le palmarès s'indexe sur l'identifiant, pas sur le nom",
+    /function fusionnerPalmares\(id, nom, records\)/.test(script) &&
+    /const cleId = String\(id \|\| ""\)/.test(script));
+  verifier("le nom est remplacé, jamais fusionné",
+    /a\.nom = \(nom \|\| a\.nom \|\| "JOUEUR"\)/.test(script));
+  verifier("le compteur de duels s'indexe sur l'identifiant",
+    /return idAdverse \? "duo_duels_" \+ idAdverse : null/.test(script));
+  verifier("l'identifiant voyage dans les deux sens de la poignée de main",
+    (script.match(/t: "nm", n: monNom, id: monId\(\)/g) || []).length === 2 &&
+    /t: "nm2", n: monNom, id: monId\(\)/.test(script));
+  /* Déclaré après cleDuel(), idAdverse tombait en zone morte au premier
+     déplacement de code. Il vit désormais avec nomAdverse. */
+  verifier("l'identité de l'adversaire est déclarée avant d'être lue",
+    script.indexOf('nomAdverse = "", idAdverse = ""') < script.indexOf("function cleDuel"));
+  verifier("l'identifiant est tiré une fois et conservé",
+    /localStorage\.setItem\("duo_id", i\)/.test(script));
+  /* On repart de zéro : les entrées d'avant n'ont pas d'identifiant et on ne
+     peut pas deviner qui est qui. Mieux vaut effacer que mélanger. */
+  verifier("les données sans identifiant sont effacées une fois",
+    /function migrerSchema/.test(script) &&
+    /localStorage\.setItem\("duo_schema", String\(SCHEMA\)\)/.test(script));
+  verifier("c'est moi qui suis surligné, par identifiant",
+    /moi: i === monId\(\)/.test(script) && !/r\.nom === monNom\.toUpperCase\(\)/.test(script));
 }
 
 /* ======================= RÉSULTAT ======================= */

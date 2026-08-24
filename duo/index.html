@@ -687,7 +687,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.4";
+const VERSION = "16.0";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -1127,7 +1127,7 @@ const VICE_DEFS = {
 let peer = null, conn = null;
 let estHote = false, partieEnCours = false;
 let modeSolo = false, niveauIA = "moyen";
-let monNom = "JOUEUR", nomAdverse = "";
+let monNom = "JOUEUR", nomAdverse = "", idAdverse = "";
 let rttMs = 60;                      /* aller-retour lissé, pour la compensation de latence */
 let voieConnexion = "";              /* "DIRECT" ou "RELAIS", mesuré sur la session */
 let versionAdverse = "";             /* renseignée si elle diffère de la nôtre */
@@ -1773,7 +1773,7 @@ function afficherPalmares(){
     bloc.appendChild(titre);
     rangs.forEach((r, i) => {
       const l = document.createElement("div");
-      l.className = "palmRang" + (r.nom === monNom.toUpperCase() ? " moi" : "");
+      l.className = "palmRang" + (r.moi ? " moi" : "");
       const p = document.createElement("span"); p.className = "pos"; p.textContent = (i+1) + ".";
       const n = document.createElement("span"); n.className = "nom"; n.textContent = r.nom;
       const v = document.createElement("span"); v.className = "val";
@@ -1794,7 +1794,7 @@ function afficherPalmares(){
     bloc.appendChild(t);
     taux.forEach((r, i) => {
       const l = document.createElement("div");
-      l.className = "palmRang" + (r.nom === monNom.toUpperCase() ? " moi" : "");
+      l.className = "palmRang" + (r.moi ? " moi" : "");
       const p = document.createElement("span"); p.className = "pos"; p.textContent = (i+1) + ".";
       const n = document.createElement("span"); n.className = "nom"; n.textContent = r.nom;
       const v = document.createElement("span"); v.className = "val";
@@ -1881,8 +1881,7 @@ function afficherPalmares(){
 
 /* ================= COMPTEUR DE DUELS (persistant par adversaire) ================= */
 function cleDuel(){
-  const adv = (nomAdverse || "").replace(/[^A-Z0-9]/gi, "").slice(0, 12);
-  return adv ? "duo_duels_" + adv : null;
+  return idAdverse ? "duo_duels_" + idAdverse : null;
 }
 function lireDuels(){
   const c = cleDuel();
@@ -1898,6 +1897,7 @@ function enregistrerDuel(jAiGagne){
   const s = lireDuels();
   if (jAiGagne){ s.v++; s.s = s.s >= 0 ? s.s + 1 : 1; }
   else { s.d++; s.s = s.s <= 0 ? s.s - 1 : -1; }
+  s.nom = nomAdverse || s.nom || "ADVERSAIRE";
   try{ localStorage.setItem(c, JSON.stringify(s)); }catch(e){}
 }
 /* ---------- historique et records, conservés sur l'appareil ---------- */
@@ -2156,11 +2156,10 @@ function tousLesDuels(){
     for (let i = 0; i < localStorage.length; i++){
       const cle = localStorage.key(i);
       if (!cle || cle.indexOf("duo_duels_") !== 0) continue;
-      const nom = cle.slice(10);
-      if (!nom) continue;
       const s = JSON.parse(localStorage.getItem(cle)) || {};
       const v = s.v || 0, d = s.d || 0;
-      if (v + d > 0) out.push({ nom: nom, v: v, d: d, s: s.s || 0 });
+      /* le nom vit dans l'entrée : renommé, l'adversaire garde son bilan */
+      if (v + d > 0) out.push({ nom: s.nom || "ADVERSAIRE", v: v, d: d, s: s.s || 0 });
     }
   }catch(e){}
   return out.sort((a, b) => (b.v + b.d) - (a.v + a.d));
@@ -2225,6 +2224,42 @@ function poserAvatar(el, photo, nom){
   el.querySelector("img").src = avatarPour(photo, nom);
 }
 
+/* ================= IDENTITÉ =================
+   Le nom ne peut pas servir de clé : se renommer créait une deuxième entrée au
+   palmarès, un deuxième compteur de duels, et permettait d'hériter de la ligne
+   d'un autre en prenant son nom. On tire donc un identifiant une fois, gardé
+   sur l'appareil ; le nom n'est plus qu'une étiquette d'affichage.
+
+   Conséquence assumée : l'identité tient au navigateur. Changer de téléphone ou
+   vider le stockage repart de zéro, là où le nom, lui, suivait. */
+const SCHEMA = 2;
+function monId(){
+  try{
+    let i = localStorage.getItem("duo_id");
+    if (!i){
+      i = "j" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("duo_id", i);
+    }
+    return i;
+  }catch(e){ return "j0"; }
+}
+/* Les entrées d'avant n'ont pas d'identifiant et ne peuvent pas en recevoir un
+   sans deviner qui est qui. On repart proprement plutôt que de mélanger. */
+(function migrerSchema(){
+  try{
+    if (Number(localStorage.getItem("duo_schema")) >= SCHEMA) return;
+    const aJeter = [];
+    for (let i = 0; i < localStorage.length; i++){
+      const c = localStorage.key(i);
+      if (c === "duo_palmares" || c === "duo_bilan" || c === "duo_historique" ||
+          (c && c.indexOf("duo_duels_") === 0)) aJeter.push(c);
+    }
+    aJeter.forEach(c => localStorage.removeItem(c));
+    localStorage.setItem("duo_schema", String(SCHEMA));
+  }catch(e){}
+})();
+
+
 const PALMARES_MAX = 24;
 function lirePalmares(){
   try{ return JSON.parse(localStorage.getItem("duo_palmares")) || {}; }catch(e){ return {}; }
@@ -2243,32 +2278,36 @@ function ecrirePalmares(p){
 function valeurTotale(r){
   return (r.echange || 0) + (r.serie || 0) * 3 + (r.remontee || 0) * 2 + (r.relais || 0);
 }
-function fusionnerPalmares(nom, records){
-  const n = (nom || "").trim().slice(0, 14).toUpperCase();
-  if (!n || !records) return;
+function fusionnerPalmares(id, nom, records){
+  const cleId = String(id || "").slice(0, 24);
+  if (!cleId || !records) return;
   const p = lirePalmares();
-  const a = p[n] || {};
+  const a = p[cleId] || {};
   for (const cle of ["echange", "serie", "remontee", "relais", "v", "j"])
     a[cle] = Math.max(a[cle] || 0, records[cle] || 0);
+  /* Le nom, lui, n'est pas fusionné mais remplacé : c'est une étiquette, et
+     la dernière connue est la bonne. */
+  a.nom = (nom || a.nom || "JOUEUR").trim().slice(0, 14).toUpperCase();
   a.maj = Date.now();
-  p[n] = a;
+  p[cleId] = a;
   ecrirePalmares(p);
 }
 function absorberPalmares(recu){
   if (!recu || typeof recu !== "object") return;
-  for (const nom of Object.keys(recu).slice(0, PALMARES_MAX * 2))
-    fusionnerPalmares(nom, recu[nom]);
+  for (const id of Object.keys(recu).slice(0, PALMARES_MAX * 2))
+    fusionnerPalmares(id, (recu[id] || {}).nom, recu[id]);
 }
 /* on s'inscrit soi-même, pour figurer dans son propre classement */
-function inscrireMesRecords(){ fusionnerPalmares(monNom, Object.assign({}, lireRecords(), lireBilan())); }
+function inscrireMesRecords(){ fusionnerPalmares(monId(), monNom, Object.assign({}, lireRecords(), lireBilan())); }
 
 /* Le taux sans plancher couronne celui qui a gagné son unique partie. */
 const MIN_PARTIES = 5;
 function classementTaux(){
   const p = lirePalmares();
   return Object.keys(p)
-    .filter(n => (p[n].j || 0) >= MIN_PARTIES)
-    .map(n => ({ nom: n, v: Math.round((p[n].v || 0) / p[n].j * 100), j: p[n].j }))
+    .filter(i => (p[i].j || 0) >= MIN_PARTIES)
+    .map(i => ({ nom: p[i].nom || "JOUEUR", moi: i === monId(),
+                 v: Math.round((p[i].v || 0) / p[i].j * 100), j: p[i].j }))
     .sort((a, b) => b.v - a.v)
     .slice(0, 5);
 }
@@ -2276,10 +2315,10 @@ function classementTaux(){
 function classement(cle){
   const p = lirePalmares();
   return Object.keys(p)
-    .filter(n => (p[n][cle] || 0) > 0)
+    .filter(i => (p[i][cle] || 0) > 0)
     .sort((a, b) => (p[b][cle] || 0) - (p[a][cle] || 0))
     .slice(0, 5)
-    .map(n => ({ nom: n, v: p[n][cle] }));
+    .map(i => ({ nom: p[i].nom || "JOUEUR", moi: i === monId(), v: p[i][cle] }));
 }
 
 function texteRecords(){
@@ -2714,7 +2753,7 @@ function finirReprise(reussie){
   if (reussie){
     voile.classList.add("cache");
     annoncer("LIAISON RÉTABLIE", "#4ADE80");
-    envoyerFiable({ t: "nm", n: monNom });
+    envoyerFiable({ t: "nm", n: monNom, id: monId() });
     envoyerFiable({ t: "ver", v: VERSION });
     envoyerConfig();
     envoyerPhoto();
@@ -2733,7 +2772,7 @@ function demarrerPartie(){
   jeu.style.display = "flex";
   majNoms();
   if (!modeSolo){
-    envoyerFiable({ t: "nm", n: monNom });
+    envoyerFiable({ t: "nm", n: monNom, id: monId() });
     envoyerFiable({ t: "ver", v: VERSION });
   }
   phase = "regles";
@@ -2897,10 +2936,15 @@ function recevoir(m){
     case "r": etat.raqHaut = m.r; vitRaqHaut = m.v || 0; chargeHaut = (m.c || 0)/100; chargesAffichees[1] = chargeHaut; break;
     case "nm":
       nomAdverse = assainirNom(m.n);
+      idAdverse = String(m.id || "").slice(0, 24);
       majNoms();
-      envoyerFiable({ t: "nm2", n: monNom });
+      envoyerFiable({ t: "nm2", n: monNom, id: monId() });
       break;
-    case "nm2": nomAdverse = assainirNom(m.n); majNoms(); break;
+    case "nm2":
+      nomAdverse = assainirNom(m.n);
+      idAdverse = String(m.id || "").slice(0, 24);
+      majNoms();
+      break;
     case "cfg":
       /* réglages de match : ils ne changent pas en cours de route, donc ils
          voyagent une seule fois sur le canal fiable au lieu de 30 fois par
@@ -2914,7 +2958,7 @@ function recevoir(m){
       recordsAdverse = m.r || null;
       /* on enregistre l'adversaire, puis on absorbe tout ce qu'il connaît :
          c'est ainsi que les records voyagent sans serveur */
-      fusionnerPalmares(m.n || nomAdverse, m.r);
+      fusionnerPalmares(m.id || idAdverse, m.n || nomAdverse, m.r);
       absorberPalmares(m.p);
       majRecordsVoile();
       afficherPalmares();
@@ -3955,7 +3999,7 @@ function afficherFin(){
     : "drop-shadow(0 0 20px rgba(124,138,165,.4))";
   if (!modeSolo){
     inscrireMesRecords();
-    envoyerFiable({ t: "rec", r: Object.assign({}, lireRecords(), lireBilan()), n: monNom, p: lirePalmares() });
+    envoyerFiable({ t: "rec", r: Object.assign({}, lireRecords(), lireBilan()), n: monNom, id: monId(), p: lirePalmares() });
     afficherPalmares();
     majRecordsVoile();
   } else {
