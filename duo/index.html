@@ -193,6 +193,8 @@ button.choisi{
   font-family:"JetBrains Mono",monospace;font-size:18px;color:var(--sourd);
 }
 .vignette img{width:100%;height:100%;object-fit:cover;display:block}
+.vignette.pret{border-color:rgba(138,180,255,.55);color:#8AB4FF}
+.note{color:var(--sourd);font-size:11.5px;line-height:1.5;margin:8px 2px 0}
 #capPhoto{
   position:fixed;inset:0;z-index:20;display:none;
   flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;
@@ -468,6 +470,11 @@ canvas{
       <div id="apercuPhoto" class="vignette">?</div>
       <button id="btnPhoto" class="secondaire">Prendre une photo</button>
     </div>
+    <div class="rangPhoto">
+      <div id="apercuCri" class="vignette">🎙</div>
+      <button id="btnCriMenu" class="secondaire">Enregistrer mon cri</button>
+    </div>
+    <p class="note">1,5 s de votre voix, rejouée à chaque point que vous marquez.</p>
   </div>
 
   <div class="carte">
@@ -679,7 +686,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.0";
+const VERSION = "15.1";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -1237,10 +1244,11 @@ async function enregistrerCri(){
   reveillerAudio();
   enTrainDEnregistrer = true;
   try{ micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch(e){ enTrainDEnregistrer = false; annoncer("MICRO REFUSÉ", "#F87171"); return; }
+  catch(e){ enTrainDEnregistrer = false; majBoutonCri(); annoncer("MICRO REFUSÉ", "#F87171"); return; }
   micAutorise = true;
   const elMic = document.getElementById("micEtat");
   elMic.classList.remove("cache");
+  majBoutonCri("REC…");
   const rec = new MediaRecorder(micStream, { mimeType: mt });
   const morceaux = [];
   rec.ondataavailable = e => { if (e.data && e.data.size) morceaux.push(e.data); };
@@ -1250,9 +1258,9 @@ async function enregistrerCri(){
     relacherMicro();
     try{
       const blob = new Blob(morceaux, { type: mt });
-      if (blob.size <= 300 || blob.size >= 250000){ annoncer("CRI TROP COURT", "#F87171"); return; }
+      if (blob.size <= 300 || blob.size >= 250000){ majBoutonCri(); annoncer("CRI TROP COURT", "#F87171"); return; }
       criLocal = { mt: mt, buf: await blob.arrayBuffer() };
-      micActif = true; majIcones();
+      micActif = true; majIcones(); majBoutonCri();
       annoncer("CRI ENREGISTRÉ · IL PART À CHAQUE POINT", "#8AB4FF");
       envoyerCri();
       /* On le rejoue tout de suite : c'est le seul moment où l'on peut
@@ -1262,6 +1270,14 @@ async function enregistrerCri(){
   };
   rec.start();
   setTimeout(() => { try{ rec.stop(); } catch(e){} }, DUREE_CRI);
+}
+
+/* Le menu doit dire d'un coup d'œil si un cri existe : sans ce retour, on ne
+   sait jamais si l'enregistrement a pris, et on rappuie au hasard. */
+function majBoutonCri(etiquette){
+  const b = document.getElementById("btnCriMenu"), v = document.getElementById("apercuCri");
+  if (b) b.textContent = etiquette || (criLocal ? "Réenregistrer mon cri" : "Enregistrer mon cri");
+  if (v){ v.textContent = criLocal ? "✓" : "🎙"; v.classList.toggle("pret", !!criLocal); }
 }
 
 function envoyerCri(){
@@ -2187,6 +2203,7 @@ function fermerCamera(){
   if (fluxCam){ fluxCam.getTracks().forEach(p => p.stop()); fluxCam = null; }
 }
 $("btnAnnulerPhoto").addEventListener("click", fermerCamera);
+$("btnCriMenu").addEventListener("click", enregistrerCri);
 $("btnCapturer").addEventListener("click", () => {
   const v = $("fluxPhoto");
   const c = document.createElement("canvas");
@@ -5350,7 +5367,9 @@ function dessinerBloc(o, yEcran, t){
 
 /* Choisit ce qui s'affiche : 3, 2, 1 puis le mot. Pure, donc vérifiable. */
 function etapeCompte(restant, long, mot){
-  if (!long) return { texte: mot, tic: 0, mot: true };
+  /* Le mot est une ouverture de manche, pas une ponctuation : le sortir entre
+     chaque point l'userait en trois minutes. Entre deux points, GO, point. */
+  if (!long) return { texte: "GO", tic: 0, mot: false };
   if (restant > 2100) return { texte: "3", tic: 3, mot: false };
   if (restant > 1400) return { texte: "2", tic: 2, mot: false };
   if (restant > 700)  return { texte: "1", tic: 1, mot: false };

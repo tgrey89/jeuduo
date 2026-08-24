@@ -817,8 +817,12 @@ titre("N. Cri de victoire et décompte");
   verifier("le décompte long montre bien 3 puis 2 puis 1 puis le mot",
     etape(LONG, true, "GO").texte === "3" && etape(2000, true, "GO").texte === "2" &&
     etape(1000, true, "GO").texte === "1" && etape(300, true, "GO").texte === "GO");
-  verifier("le départ court n'affiche que le mot",
-    etape(700, false, "PÂTISSEZ").texte === "PÂTISSEZ" && etape(0, false, "GO").mot === true);
+  /* Le mot ouvre la manche et rien d'autre : entre deux points, GO. Sorti à
+     chaque point, il s'userait en trois minutes. */
+  verifier("entre deux points, le mot ne sort pas",
+    etape(700, false, "PÂTISSEZ").texte === "GO" && etape(0, false, "FEU").texte === "GO");
+  verifier("le mot n'apparaît qu'au départ long",
+    etape(300, true, "PÂTISSEZ").texte === "PÂTISSEZ" && etape(300, true, "PÂTISSEZ").mot === true);
   /* Chaque palier doit avoir son propre repère, sinon le bip du décompte
      part à chaque image au lieu de partir une fois par chiffre. */
   const tics = [LONG, 2000, 1000, 300].map(r => etape(r, true, "GO").tic);
@@ -848,6 +852,12 @@ titre("N. Cri de victoire et décompte");
     !/enregistrerEtEnvoyer/.test(script) && !/basculerMicro/.test(script));
   verifier("le bouton micro enregistre le cri",
     /btnMicToggle"\)\.addEventListener\("click", enregistrerCri\)/.test(script));
+  /* Le cri doit être proposé là où l'on prépare sa partie, pas seulement
+     derrière une icône en cours de jeu que personne ne remarque. */
+  verifier("le menu principal propose d'enregistrer un cri",
+    /id="btnCriMenu"/.test(html) && /btnCriMenu"\)\.addEventListener\("click", enregistrerCri\)/.test(script));
+  verifier("le menu dit si un cri est déjà enregistré",
+    /function majBoutonCri/.test(script) && /criLocal \? "✓" : "🎙"/.test(script));
 }
 
 /* ======================= RÉSULTAT ======================= */
