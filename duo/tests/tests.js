@@ -865,10 +865,11 @@ titre("N. Classements et avatars");
 {
   const F = new Function("localStorage",
     extraire(/function titreDuel\(v, d\)\{[\s\S]*?\n\}/, "titreDuel") + "\n" +
-    extraire(/function graineNom\(nom\)\{[\s\S]*?\n\}/, "graineNom") + "\n" +
+    extraire(/function lettresNom\(nom\)\{[\s\S]*?\n\}/, "lettresNom") + "\n" +
+    extraire(/function traitsMonstre\(nom\)\{[\s\S]*?\n\}/, "traitsMonstre") + "\n" +
     extraire(/function monstreSVG\(nom\)\{[\s\S]*?\n\}/, "monstreSVG") + "\n" +
     extraire(/function tousLesDuels\(\)\{[\s\S]*?\n\}/, "tousLesDuels") + "\n" +
-    "return { titreDuel, graineNom, monstreSVG, tousLesDuels };");
+    "return { titreDuel, lettresNom, traitsMonstre, monstreSVG, tousLesDuels };");
 
   const faux = {
     _d: { "duo_duels_j1": '{"v":4,"d":2,"s":1,"nom":"KEMAL"}',
@@ -904,6 +905,34 @@ titre("N. Classements et avatars");
   verifier("le monstre est une image autonome, sans fichier",
     api.monstreSVG("X").indexOf("data:image/svg+xml") === 0);
   verifier("un nom vide a quand même une tête", api.monstreSVG("").length > 200);
+
+  /* Un condensé global fait tout basculer à la moindre lettre : on ne comprend
+     plus d'où vient la tête. Chaque trait doit sortir d'une partie précise. */
+  const tr = api.traitsMonstre;
+  verifier("la couleur ne dépend que des deux premières lettres",
+    tr("THIBAUT").teinte === tr("THEO").teinte &&
+    tr("THIBAUT").teinte === tr("TH").teinte);
+  /* Deux initiales voisines dans l'alphabet ne doivent pas donner deux
+     couleurs voisines : KEMAL et LUCIE se ressemblaient. */
+  verifier("deux initiales voisines donnent des couleurs franchement distinctes",
+    Math.abs(tr("KEMAL").teinte - tr("LUCIE").teinte) > 60);
+  verifier("les 26 initiales occupent 26 teintes distinctes",
+    new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(l => Math.round(tr(l).teinte))).size === 26);
+  verifier("la deuxième lettre nuance sans dépayser",
+    Math.abs(tr("THIBAUT").teinte - tr("TRISTAN").teinte) <= 20 &&
+    tr("THIBAUT").teinte !== tr("TRISTAN").teinte);
+  verifier("les yeux comptent les voyelles, plafonnés à trois",
+    tr("BRT").yeux === 1 && tr("LEA").yeux === 2 && tr("AEIOU").yeux === 3);
+  verifier("les cornes suivent la dernière lettre",
+    tr("THIBAU").cornes !== tr("THIBAUT").cornes ||
+    tr("THIBAUT").cornes === tr("XAVIT").cornes);
+  verifier("le corps s'anguleuse à mesure que le nom s'allonge",
+    tr("T").rond > tr("THIBAUT").rond && tr("THIBAUT").rond > tr("PIERREFRANCOIS").rond);
+  verifier("les accents et la ponctuation ne changent pas la bête",
+    api.monstreSVG("LÉA") === api.monstreSVG("LEA") &&
+    api.monstreSVG("PIERRE-FRANCOIS") === api.monstreSVG("PIERREFRANCOIS"));
+  verifier("ajouter une lettre garde la couleur",
+    tr("THIBAU").teinte === tr("THIBAUT").teinte);
 
   const MIN = nombre("MIN_PARTIES");
   verifier("le taux de victoire exige un plancher de parties", MIN >= 5, MIN + " parties");

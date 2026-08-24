@@ -354,3 +354,4 @@ entre proches.
 | 15.3 | Retrait de la photo, retour au monstre, et propagation de l'absence à l'adversaire |
 | 15.4 | Le monstre se redessine à chaque frappe dans le champ du nom |
 | 16.0 | Identité stable par navigateur : palmarès et duels indexés sur un identifiant, données remises à zéro |
+| 16.1 | Monstre lisible : couleur par initiale, yeux par voyelles, cornes par dernière lettre |

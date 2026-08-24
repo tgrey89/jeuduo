@@ -687,7 +687,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "16.0";
+const VERSION = "16.1";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -2182,41 +2182,64 @@ function titreDuel(v, d){
 /* ---------- avatars : un monstre dessiné à partir du nom ----------
    Aucun fichier. Le même nom rend toujours le même monstre, ce qui donne une
    tête même aux joueurs reçus par ricochet, dont on n'aura jamais la photo. */
-function graineNom(nom){
-  let h = 2166136261;
-  const s = (nom || "?").toUpperCase();
-  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
+/* Chaque trait sort d'une partie PRÉCISE du nom, jamais d'un condensé global.
+   Un condensé fait tout basculer à la moindre lettre ajoutée : on ne comprend
+   plus d'où vient la tête. Ici la règle se lit :
+
+     couleur   → première lettre (les THIBAUT, THOMAS et THÉO sont cousins)
+     nuance    → deuxième lettre, léger écart pour ne pas les confondre
+     yeux      → nombre de voyelles, de 1 à 3
+     cornes    → dernière lettre
+     dents     → présence d'une lettre dure (K X Z W Q G R J)
+     rondeur   → longueur : court et rond, long et anguleux
+
+   Ajouter une lettre à la fin déplace donc les cornes et anguleuse un peu le
+   corps, sans changer la couleur : on reconnaît encore la même bête. */
+function lettresNom(nom){
+  return String(nom || "?")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z]/g, "") || "X";
+}
+function traitsMonstre(nom){
+  const s = lettresNom(nom);
+  const co = c => s.charCodeAt(c) - 65;
+  const voyelles = (s.match(/[AEIOUY]/g) || []).length;
+  const n = s.length;
+  return {
+    /* ±10° : chaque deuxième lettre a son propre écart, sans quitter la
+       famille de l'initiale. Un modulo trop court faisait retomber H et R
+       sur la même nuance. */
+    /* Le 7 est premier avec 26 : chaque initiale garde sa teinte à elle, mais
+       deux lettres voisines cessent d'avoir des couleurs voisines. Sans lui,
+       KEMAL et LUCIE se ressemblaient. */
+    teinte: ((co(0) * 7 % 26) * 360 / 26 + (n > 1 ? (co(1) - 12.5) * 0.8 : 0) + 360) % 360,
+    yeux: Math.max(1, Math.min(3, voyelles)),
+    cornes: co(n - 1) % 3,
+    dents: /[KXZWQGRJ]/.test(s),
+    rond: Math.max(16, 48 - Math.min(n, 12) * 2.5),
+  };
 }
 function monstreSVG(nom){
-  let g = graineNom(nom);
-  const suivant = () => { g = (Math.imul(g, 1664525) + 1013904223) >>> 0; return g / 4294967296; };
-  const teinte = Math.floor(suivant() * 360);
-  const corps = "hsl(" + teinte + ",70%,58%)";
-  const ombre = "hsl(" + ((teinte + 28) % 360) + ",65%,34%)";
-  const yeux = 1 + Math.floor(suivant() * 3);
-  const cornes = Math.floor(suivant() * 3);
-  const rond = 26 + Math.floor(suivant() * 22);
-  const dents = suivant() > 0.5;
+  const t = traitsMonstre(nom);
+  const corps = "hsl(" + t.teinte.toFixed(0) + ",70%,58%)";
+  const ombre = "hsl(" + ((t.teinte + 28) % 360).toFixed(0) + ",65%,34%)";
   let p = "";
-  for (let i = 0; i < cornes; i++){
-    const x = 26 + i * (48 / Math.max(1, cornes)) + 8;
+  for (let i = 0; i < t.cornes; i++){
+    const x = 34 + i * (32 / Math.max(1, t.cornes));
     p += '<path d="M' + x + ' 26 L' + (x + 7) + ' 8 L' + (x + 14) + ' 26 Z" fill="' + ombre + '"/>';
   }
-  p += '<rect x="16" y="22" width="68" height="62" rx="' + rond + '" fill="' + corps + '"/>';
-  for (let i = 0; i < yeux; i++){
-    const x = 50 + (i - (yeux - 1) / 2) * (yeux > 1 ? 20 : 0);
-    const y = 48 + (suivant() * 6 - 3);
-    p += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="8" fill="#0A0E18"/>';
-    p += '<circle cx="' + (x + 2).toFixed(1) + '" cy="' + (y - 2).toFixed(1) + '" r="3" fill="#EAF0FF"/>';
+  p += '<rect x="16" y="22" width="68" height="62" rx="' + t.rond.toFixed(1) + '" fill="' + corps + '"/>';
+  for (let i = 0; i < t.yeux; i++){
+    const x = 50 + (i - (t.yeux - 1) / 2) * (t.yeux > 1 ? 20 : 0);
+    p += '<circle cx="' + x.toFixed(1) + '" cy="48" r="8" fill="#0A0E18"/>';
+    p += '<circle cx="' + (x + 2).toFixed(1) + '" cy="46" r="3" fill="#EAF0FF"/>';
   }
-  p += '<rect x="36" y="66" width="28" height="' + (dents ? 9 : 5) + '" rx="3" fill="#0A0E18"/>';
-  if (dents) p += '<rect x="42" y="66" width="4" height="5" fill="#EAF0FF"/><rect x="54" y="66" width="4" height="5" fill="#EAF0FF"/>';
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
-              '<rect width="100" height="100" fill="#080C16"/>' + p + '</svg>';
-  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  p += '<rect x="36" y="66" width="28" height="' + (t.dents ? 9 : 5) + '" rx="3" fill="#0A0E18"/>';
+  if (t.dents) p += '<rect x="42" y="66" width="4" height="5" fill="#EAF0FF"/><rect x="54" y="66" width="4" height="5" fill="#EAF0FF"/>';
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+    '<rect width="100" height="100" fill="#080C16"/>' + p + '</svg>');
 }
-/* Photo si elle existe, monstre sinon : on ne laisse plus de « ? ». */
 function avatarPour(photo, nom){ return photo || monstreSVG(nom); }
 function poserAvatar(el, photo, nom){
   if (!el) return;
