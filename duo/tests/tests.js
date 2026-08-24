@@ -1018,6 +1018,35 @@ titre("N. Classements et avatars");
     /fractionPas = Math\.max\(0, Math\.min\(1, accumulateur \/ PAS_MS\)\)/.test(script));
 }
 
+{
+  /* Le retour était écrit vingt lignes plus bas que le bouton, hors écran sur
+     téléphone : le bouton passait pour mort. Il doit répondre sur lui-même. */
+  verifier("le retour s'affiche sur le bouton pressé",
+    /function retourBouton\(btn, texte, ms\)/.test(script) &&
+    /retourBouton\(btn, "Lien copié ✓"\)|partagerLien\([\s\S]{0,60}"Lien copié ✓"\)/.test(script));
+  verifier("la carte de création a sa propre ligne d'état",
+    /id="etatCreer"/.test(html) && /\$\("etatCreer"\)/.test(script));
+  verifier("le retour n'est plus envoyé au bas de page",
+    !/etatLobby\.textContent = "Lien copié/.test(script));
+  /* Sans code généré, le bouton sortait en silence. */
+  verifier("l'absence de code est dite, pas tue",
+    /if \(!code\)\{ retourBouton\(btn, "Générez d'abord un code"\); return; \}/.test(script));
+  verifier("l'absence de record est dite, pas tue",
+    /retourBouton\(btn, "Aucun record — jouez d'abord", 2600\)/.test(script));
+  /* Sur iPhone, la feuille de partage mène droit à Messages ; la copie n'est
+     qu'un repli, et l'affichage du lien le dernier recours. */
+  verifier("le partage passe d'abord par la feuille du système",
+    /if \(navigator\.share\)\{/.test(script));
+  verifier("annuler la feuille de partage n'est pas traité comme un échec",
+    /e\.name === "AbortError"/.test(script));
+  verifier("le lien reste attrapable si la copie échoue",
+    /cible\.textContent = lien/.test(script));
+  /* Le numéro figé dans le HTML affichait une version périmée avant que le
+     script ne le remplace. */
+  verifier("aucun numéro de version en dur dans la page",
+    !/id="version">DUO v[0-9]/.test(html));
+}
+
 /* ======================= RÉSULTAT ======================= */
 console.log("\n" + "=".repeat(52));
 console.log("réussis : " + reussis + "   échoués : " + echoues);

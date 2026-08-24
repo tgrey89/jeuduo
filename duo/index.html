@@ -147,7 +147,8 @@ input:focus{outline:none;border-color:var(--moi)}
   user-select:all;-webkit-user-select:all;animation:apparition .5s ease both;
 }
 @keyframes apparition{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-#etatLobby{font-size:12.5px;color:var(--sourd);text-align:center;min-height:18px;font-family:"JetBrains Mono",monospace}
+#etatLobby,#etatCreer{font-size:12.5px;color:var(--sourd);text-align:center;min-height:18px;font-family:"JetBrains Mono",monospace}
+#etatCreer{margin-top:10px;word-break:break-all}
 #diagRes{font-family:"JetBrains Mono",monospace;font-size:11.5px;line-height:2;color:var(--texte)}
 #diagRes .ok{color:#4ADE80} #diagRes .ko{color:#F87171} #diagRes .attente{color:var(--sourd)}
 #diagRes .verdict{margin-top:6px;color:var(--sourd);font-size:11px;line-height:1.6;letter-spacing:0}
@@ -524,6 +525,7 @@ canvas{
     <div id="codePartie" class="cache"></div>
     <button id="btnLien" class="secondaire cache">Copier le lien d'invitation</button>
     <button id="btnDefi" class="secondaire">Défier quelqu'un avec mon record</button>
+    <div id="etatCreer"></div>
   </div>
 
   <div class="carte">
@@ -547,7 +549,7 @@ canvas{
   <div id="defiBandeau" class="cache"></div>
   <div id="etatLobby"></div>
   <div id="records"></div>
-  <div id="version">DUO v14.9 · 2026-08-09</div>
+  <div id="version">DUO</div>
 </div>
 
 <div id="jeu">
@@ -686,7 +688,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "16.2";
+const VERSION = "16.3";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -2490,30 +2492,64 @@ function verifierDefi(){
   }
 }
 
+/* Le retour doit se produire là où le doigt vient d'appuyer. Écrit vingt
+   lignes plus bas, il passait inaperçu — d'où l'impression que le bouton ne
+   faisait rien. */
+function retourBouton(btn, texte, ms){
+  if (!btn) return;
+  if (!btn.dataset.libelle) btn.dataset.libelle = btn.textContent;
+  btn.textContent = texte;
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => { btn.textContent = btn.dataset.libelle; }, ms || 2200);
+}
+
+/* Sur iPhone, la feuille de partage est ce qu'on veut vraiment : elle mène
+   droit à Messages ou WhatsApp. La copie n'est qu'un repli, et l'affichage du
+   lien un dernier recours pour qu'il reste toujours attrapable à la main. */
+async function partagerLien(lien, btn, reussite){
+  const cible = $("etatCreer");
+  try{
+    if (navigator.share){
+      await navigator.share({ text: lien });
+      retourBouton(btn, "Envoyé ✓");
+      if (cible) cible.textContent = "";
+      return;
+    }
+  }catch(e){
+    /* annulation de la feuille de partage : ce n'est pas un échec */
+    if (e && e.name === "AbortError"){ if (cible) cible.textContent = ""; return; }
+  }
+  try{
+    await navigator.clipboard.writeText(lien);
+    retourBouton(btn, reussite);
+    if (cible) cible.textContent = lien;
+  }catch(e){
+    retourBouton(btn, "Copie refusée — lien ci-dessous");
+    if (cible) cible.textContent = lien;
+  }
+}
+
 function lienInvitation(code){
   const base = location.origin + location.pathname;
   return base + "?p=" + encodeURIComponent(code);
 }
-$("btnDefi").addEventListener("click", async () => {
+$("btnDefi").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
   const r = lireRecords();
-  if (!r.echange){ etatLobby.textContent = "Jouez une partie d'abord : vous n'avez pas encore de record."; return; }
-  const lien = lienDefi();
-  try{
-    await navigator.clipboard.writeText(lien);
-    etatLobby.textContent = "Défi copié : " + r.echange + " renvois à battre.";
-  }catch(e){ etatLobby.textContent = lien; }
+  if (!r.echange){
+    retourBouton(btn, "Aucun record — jouez d'abord", 2600);
+    $("etatCreer").textContent = "Le défi transporte votre meilleur échange : il en faut un.";
+    return;
+  }
+  await partagerLien(lienDefi(), btn, "Défi copié ✓ · " + r.echange + " renvois");
 });
 
-$("btnLien").addEventListener("click", async () => {
+$("btnLien").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
   const code = codePartie.textContent.trim();
-  if (!code) return;
-  const lien = lienInvitation(code);
-  try{
-    await navigator.clipboard.writeText(lien);
-    etatLobby.textContent = "Lien copié — envoyez-le à votre adversaire.";
-  }catch(e){
-    etatLobby.textContent = lien;
-  }
+  /* Un retour silencieux ici passait pour une panne du bouton. */
+  if (!code){ retourBouton(btn, "Générez d'abord un code"); return; }
+  await partagerLien(lienInvitation(code), btn, "Lien copié ✓");
 });
 
 $("btnCreer").addEventListener("click", () => {

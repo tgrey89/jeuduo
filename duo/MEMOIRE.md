@@ -356,3 +356,4 @@ entre proches.
 | 16.0 | Identité stable par navigateur : palmarès et duels indexés sur un identifiant, données remises à zéro |
 | 16.1 | Monstre lisible : couleur par initiale, yeux par voyelles, cornes par dernière lettre |
 | 16.2 | Icône micro retirée du jeu ; balle interpolée dans le pas de physique pour les écrans 120 Hz |
+| 16.3 | Lien et défi : retour sur le bouton, feuille de partage iOS, plus de sortie silencieuse |
