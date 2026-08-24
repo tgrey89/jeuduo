@@ -348,4 +348,3 @@ entre proches.
 | 14.7 | Écho du micro en solo : la chaîne de lecture se valide sans second appareil |
 | 14.8 | Voix de l'IA : elle dit la vanne, moqueuse en gagnant, rageuse en perdant |
 | 14.9 | L'IA parle aussi en fin de manche, musique écartée le temps de la phrase |
-| 15.0 | Mode À QUATRE : aire carrée, quatre barres, chacun pour soi, solo contre trois IA |

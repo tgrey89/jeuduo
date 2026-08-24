@@ -487,7 +487,6 @@ canvas{
       <button class="btnMode secondaire" data-mode="classique">Classique</button>
       <button class="btnMode secondaire" data-mode="gravite">Gravité</button>
       <button class="btnMode secondaire" data-mode="relais">Relais</button>
-      <button class="btnMode secondaire" data-mode="quatre">À quatre</button>
     </div>
     <div class="aideMode" id="aideMode">Orbes, blocs, vices et arènes à thème.</div>
     <h2>GRAPHISMES</h2>
@@ -680,7 +679,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.0";
+const VERSION = "14.9";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -704,7 +703,6 @@ const MODES = {
   classique: { bonus: false, obstacles: false, vices: false, degats: false, puits: false },
   gravite:   { bonus: false, obstacles: false, vices: false, degats: true,  puits: true },
   relais:    { bonus: false, obstacles: false, vices: false, degats: true,  puits: false, coop: true },
-  quatre:    { bonus: false, obstacles: false, vices: false, degats: false, puits: false, joueurs: 4 },
 };
 
 /* ---------- mode RELAIS ----------
@@ -1725,7 +1723,6 @@ const AIDE_MODE = {
   gravite: "Chaque joueur projette un puits d'attraction chez l'adversaire, à l'aplomb de sa raquette. Se placer, c'est à la fois défendre et dévier la balle de l'autre.",
   relais: "Coopératif : à deux, gardez une seule balle en vie le plus longtemps possible. Elle accélère sans arrêt, et le record est commun.",
   classique: "Duel pur : ni orbe, ni bloc, ni vice. Le décor et la musique de l'arène restent, la balle accélère pour éviter les échanges interminables.",
-  quatre: "Quatre barres, une par côté d'un terrain carré, chacun pour soi. Le point va au dernier qui a touché la balle. Premier à 7. Les places libres sont tenues par l'IA.",
 };
 function majReglages(){
   for (const b of document.querySelectorAll(".btnMode"))
@@ -2548,7 +2545,6 @@ function demarrerPartie(){
     envoyerFiable({ t: "ver", v: VERSION });
   }
   phase = "regles";
-  if (mode4()) initQuatre();
   adapterRegles();
   panRegles.classList.remove("cache");
   if (modeSolo){
@@ -2896,7 +2892,6 @@ function preparerService(sens){
   if (!mortSubite) margeMur = 0;
 }
 function servir(){
-  if (mode4()){ servir4(-1); phase = "jeu"; sonGo(); return; }
   balles = [ nouvelleBalle(LARG/2, HAUT/2, sensService) ];
   phase = "jeu";
   sonGo();
@@ -3033,7 +3028,6 @@ function toucherMur(b, cote, murX){
 }
 
 function physique(){
-  if (mode4()){ physiqueQuatre(); return; }
   etat.raqBas = maRaquette;          /* position réelle, à CHAQUE pas de physique
                                         (avant : rafraîchie seulement à l'envoi réseau,
                                         donc jamais en solo -> raquette fantôme au centre) */
@@ -3814,7 +3808,6 @@ function finirRelais(){
 
 function lancerRevanche(){
   arreterDecompteRelance();
-  if (mode4()){ initQuatre(); btnRevanche.textContent = "Revanche"; }
   if (cfgMode().coop){ rebondsEchange = 0; btnRevanche.textContent = "Revanche"; }
   $("btnMenu").classList.add("cache");
   $("btnPartage").classList.add("cache");
@@ -3841,10 +3834,9 @@ function posDepuisEvenement(clientX){
   const demi = (estHote ? taillesAffichees[0] : taillesAffichees[1]) / 2;
   maRaquette = Math.max(murG_() + demi, Math.min(murD_() - demi, x));
 }
-function pointer4(e, x, y){ if (mode4()) pos4DepuisEvenement(x, y); else posDepuisEvenement(x); }
-cv.addEventListener("touchstart", e => { e.preventDefault(); pointer4(e, e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-cv.addEventListener("touchmove",  e => { e.preventDefault(); pointer4(e, e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-cv.addEventListener("mousemove",  e => pointer4(e, e.clientX, e.clientY));
+cv.addEventListener("touchstart", e => { e.preventDefault(); posDepuisEvenement(e.touches[0].clientX); }, {passive:false});
+cv.addEventListener("touchmove",  e => { e.preventDefault(); posDepuisEvenement(e.touches[0].clientX); }, {passive:false});
+cv.addEventListener("mousemove",  e => posDepuisEvenement(e.clientX));
 
 /* ---------- clavier : jouable sans souris, et pause en solo ---------- */
 let clavierGauche = false, clavierDroite = false, enPause = false;
@@ -3946,301 +3938,6 @@ function majScore(pop){
 const PAS_MS = 1000/60;            /* pas de physique fixe : identique à 60 ou 120 Hz */
 let horlogePrec = 0, accumulateur = 0;
 
-/* ================= MODE À QUATRE =====================================
-   Quatre barres, une par côté, chacun pour soi. L'aire de jeu est CARRÉE,
-   inscrite dans le canevas 540 x 880 qui, lui, ne bouge pas : son côté vaut
-   exactement l'écart des deux murs du jeu à deux, si bien que ni la CSS, ni
-   le canevas, ni les bandeaux n'ont à changer. Les deux bandes qui restent
-   en haut et en bas portent les quatre scores, deux par bande.
-
-   Ce mode ne réutilise PAS physique(). Sans orbe, sans bloc, sans vice et
-   sans dégât, presque tout ce que cette fonction gère n'existe pas ici : un
-   chemin court et séparé vaut mieux qu'un chemin partagé criblé de tests de
-   mode — et surtout, il ne peut rien casser du jeu à deux.
-   =================================================================== */
-const COTE4 = LARG - 2*CADRE_X;                        /* 456 */
-const X0_4 = CADRE_X, X1_4 = LARG - CADRE_X;           /* 42 .. 498 */
-const Y0_4 = (HAUT - COTE4)/2, Y1_4 = Y0_4 + COTE4;    /* 212 .. 668 */
-const COIN4 = 44;    /* angle plein : la barre s'arrête avant, la balle y rebondit */
-const JEU4 = 6;      /* écart entre la face externe de la barre et sa ligne de but */
-const BUT4 = 7;      /* premier à 7 points */
-const TANG4 = 4.2;   /* angle donné par le point de contact sur la barre */
-const VIT_IA4 = 6.2;
-
-/* 0 bas, 1 haut, 2 gauche, 3 droite. `sens` est la direction du renvoi sur
-   l'axe perpendiculaire au mur ; `plan` est la ligne de but. */
-const MURS4 = [
-  { nom: "bas",    axe: "x", sens: -1, plan: Y1_4, co: "#22D3EE" },
-  { nom: "haut",   axe: "x", sens:  1, plan: Y0_4, co: "#F471B5" },
-  { nom: "gauche", axe: "y", sens:  1, plan: X0_4, co: "#FBBF24" },
-  { nom: "droite", axe: "y", sens: -1, plan: X1_4, co: "#A78BFA" },
-];
-
-/* Bornes le long d'un mur. Elles valent la même chose sur les deux axes
-   puisque l'aire est carrée, mais restent exprimées par axe : le jour où le
-   carré cesserait d'en être un, rien ne se briserait en silence. */
-function bornes4(axe){
-  return axe === "x" ? [X0_4 + COIN4, X1_4 - COIN4] : [Y0_4 + COIN4, Y1_4 - COIN4];
-}
-/* (le long du mur, perpendiculaire) pour un point du terrain */
-function coord4(axe, x, y){ return axe === "x" ? { a: x, p: y } : { a: y, p: x }; }
-function borne4(axe, pos, taille){
-  const b = bornes4(axe), demi = taille/2;
-  return Math.max(b[0] + demi, Math.min(b[1] - demi, pos));
-}
-/* face interne de la barre : le plan que la balle doit franchir pour être frappée */
-function face4(mur){ return mur.plan + mur.sens * (JEU4 + RAQ_H); }
-/* vers quel mur part une balle, d'après sa seule vitesse */
-function murVise4(vx, vy){
-  return Math.abs(vx) > Math.abs(vy) ? (vx > 0 ? 3 : 2) : (vy > 0 ? 0 : 1);
-}
-
-/* Renvoi. Pure : ne lit ni n'écrit aucun état, ce qui la rend vérifiable
-   directement par la suite de tests. */
-function frapper4(vx, vy, axe, sens, offset){
-  let va = axe === "x" ? vx : vy;
-  let vp = axe === "x" ? vy : vx;
-  vp = sens * Math.max(VY_MIN, Math.abs(vp));
-  va += Math.max(-1, Math.min(1, offset)) * TANG4;
-  const v = Math.min(Math.hypot(va, vp) * ACCEL, VIT_MAX);
-  const n = Math.hypot(va, vp) || 1;
-  va = va / n * v; vp = vp / n * v;
-  /* La normalisation peut ramener la composante perpendiculaire SOUS son
-     plancher : la balle raserait alors le mur sans jamais s'en détacher.
-     C'est le piège du plafond incohérent, vu de l'autre bout. */
-  if (Math.abs(vp) < VY_MIN){
-    vp = sens * VY_MIN;
-    va = (va < 0 ? -1 : 1) * Math.sqrt(Math.max(0, v*v - VY_MIN*VY_MIN));
-  }
-  return axe === "x" ? { vx: va, vy: vp } : { vx: vp, vy: va };
-}
-
-let barres4 = [], scores4 = [0,0,0,0], moi4 = 0, balle4 = null, flash4 = [0,0,0,0];
-function mode4(){ return modeJeu === "quatre"; }
-
-function initQuatre(){
-  barres4 = MURS4.map(m => ({
-    pos: m.axe === "x" ? LARG/2 : (Y0_4 + Y1_4)/2,
-    taille: RAQ_L_BASE, ia: true,
-  }));
-  barres4[moi4].ia = false;
-  scores4 = [0,0,0,0]; flash4 = [0,0,0,0];
-  servir4(-1);
-}
-
-/* `sauf` : le mur qui vient d'encaisser. On ne lui renvoie pas la balle dans
-   la figure avant qu'il ait eu le temps de se replacer. */
-function servir4(sauf){
-  let vx = 0, vy = 0;
-  for (let essai = 0; essai < 8; essai++){
-    const a = Math.random() * Math.PI * 2;
-    vx = VIT_INIT * Math.cos(a); vy = VIT_INIT * Math.sin(a);
-    if (murVise4(vx, vy) !== sauf) break;
-  }
-  balle4 = { x: (X0_4 + X1_4)/2, y: (Y0_4 + Y1_4)/2, vx, vy, dernier: -1 };
-}
-
-function but4(encaisse){
-  const marqueur = balle4 ? balle4.dernier : -1;
-  /* Le point va au dernier frappeur, jamais à personne d'autre. Balle jamais
-     touchée depuis le service, ou contre son propre camp : personne ne marque
-     — sinon le joueur qui ne fait rien finirait par gagner. */
-  if (marqueur >= 0 && marqueur !== encaisse){
-    scores4[marqueur]++;
-    flash4[marqueur] = 1;
-  }
-  explosion(balle4 ? balle4.x : LARG/2, balle4 ? balle4.y : HAUT/2, CO_BALLE, 40, 5.5);
-  secousse = 10; sonBut();
-  if (marqueur >= 0 && scores4[marqueur] >= BUT4){ finirQuatre(marqueur); return; }
-  servir4(encaisse);
-}
-
-/* Sans ce panneau, atteindre 7 points figeait simplement l'écran : la phase
-   passait à "fin" et plus rien ne se dessinait. Vu en essayant d'aller au bout
-   d'une partie, pas par les tests. */
-function finirQuatre(gagnant){
-  if (phase === "fin") return;
-  phase = "fin"; balle4 = null;
-  masquerPanneaux();
-  voile.classList.remove("cache");
-  voileTitre.textContent = gagnant === moi4 ? "GAGNÉ" : "PERDU";
-  voileTitre.style.background = "linear-gradient(100deg," + MURS4[gagnant].co + ",#EAF0FF)";
-  voileTitre.style.filter = "drop-shadow(0 0 26px rgba(234,240,255,.45))";
-  voileSous.textContent = "MUR " + MURS4[gagnant].nom.toUpperCase();
-  $("voilePhrase").textContent = scores4.map((s, i) => MURS4[i].nom + " " + s).join("  ·  ");
-  $("voileRecords").classList.add("cache");
-  btnRevanche.textContent = "Rejouer";
-  btnRevanche.classList.remove("cache");
-  $("btnMenu").classList.remove("cache");
-  $("btnPartage").classList.add("cache");
-  sonFin(gagnant === moi4);
-}
-
-function iaQuatre(i){
-  const m = MURS4[i], b4 = barres4[i], b = balle4;
-  if (!b) return;
-  const c = coord4(m.axe, b.x, b.y);
-  const vp = m.axe === "x" ? b.vy : b.vx;
-  const bo = bornes4(m.axe);
-  /* Elle ne suit la balle que lorsque celle-ci vient vers elle ; sinon elle
-     revient au centre de son mur. Sans ce repli, les trois IA collent en
-     permanence à la balle et le terrain devient illisible. */
-  const vise = (vp * m.sens < 0) ? c.a : (bo[0] + bo[1]) / 2;
-  const pas = (vise - b4.pos) * 0.16;
-  b4.pos += Math.max(-VIT_IA4, Math.min(VIT_IA4, pas));
-}
-
-function physiqueQuatre(){
-  const maintenant = performance.now();
-  for (let i = 0; i < 4; i++) if (flash4[i] > 0) flash4[i] *= 0.94;
-  if (phase === "compte"){ if (maintenant >= finCompte) servir(); return; }
-  if (phase !== "jeu") return;
-  if (!balle4) servir4(-1);
-
-  for (let i = 0; i < 4; i++){
-    if (barres4[i].ia) iaQuatre(i);
-    barres4[i].pos = borne4(MURS4[i].axe, barres4[i].pos, barres4[i].taille);
-  }
-
-  const b = balle4;
-  const prevX = b.x, prevY = b.y;
-  b.x += b.vx; b.y += b.vy;
-
-  for (let i = 0; i < 4; i++){
-    const m = MURS4[i], b4 = barres4[i];
-    const vp = m.axe === "x" ? b.vy : b.vx;
-    if (vp * m.sens >= 0) continue;            /* cette balle s'éloigne du mur */
-
-    const av = coord4(m.axe, prevX, prevY), ap = coord4(m.axe, b.x, b.y);
-    const f = face4(m);
-    /* profondeur : positive tant que la balle est du bon côté de la face */
-    const dAv = m.sens * (av.p - f), dAp = m.sens * (ap.p - f);
-
-    if (dAv + 0.001 >= BALLE_R && dAp <= BALLE_R){
-      const t = Math.max(0, Math.min(1, (dAv - BALLE_R) / ((dAv - dAp) || 1)));
-      const aC = av.a + (ap.a - av.a) * t;
-      if (Math.abs(aC - b4.pos) < b4.taille/2 + BALLE_R){
-        const r = frapper4(b.vx, b.vy, m.axe, m.sens, (aC - b4.pos) / (b4.taille/2));
-        b.vx = r.vx; b.vy = r.vy;
-        const pC = f + m.sens * BALLE_R;
-        if (m.axe === "x"){ b.x = aC; b.y = pC; } else { b.y = aC; b.x = pC; }
-        b.dernier = i;
-        explosion(b.x, b.y, m.co, 12, 3.4);
-        secousse = Math.max(secousse, 3);
-        sonRaq(Math.hypot(b.vx, b.vy), 0);
-        continue;
-      }
-    }
-
-    /* Ligne de but, et angles pleins. Hors de la bouche de but, le bord
-       renvoie la balle : sans cela elle se coincerait dans l'angle, entre
-       deux barres qui ne peuvent pas y aller. */
-    const dBut = m.sens * ((m.axe === "x" ? b.y : b.x) - m.plan);
-    if (dBut <= BALLE_R){
-      const bo = bornes4(m.axe);
-      const aNow = m.axe === "x" ? b.x : b.y;
-      if (aNow < bo[0] || aNow > bo[1]){
-        const pC = m.plan + m.sens * BALLE_R;
-        if (m.axe === "x"){ b.y = pC; b.vy = -b.vy; } else { b.x = pC; b.vx = -b.vx; }
-        explosion(b.x, b.y, "#8AB4FF", 7, 2.2); sonMur();
-      } else if (dBut < -BALLE_R){
-        but4(i);
-        return;
-      }
-    }
-  }
-}
-
-/* ---------- rendu ----------
-   Tracé procédural uniquement : les six décors peints sont taillés pour le
-   540 x 880, cadre compris, et ne se recadrent pas en carré. Chaque arène
-   garde son identité par ses seules couleurs. */
-function dessinerQuatre(t){
-  const A = areneCourante();
-  const vg = ctx.createRadialGradient((X0_4+X1_4)/2, (Y0_4+Y1_4)/2, 20,
-                                      (X0_4+X1_4)/2, (Y0_4+Y1_4)/2, COTE4*0.78);
-  vg.addColorStop(0, "rgba(" + A.halo + ",.40)");
-  vg.addColorStop(1, "rgba(2,4,10,0)");
-  ctx.fillStyle = "#04060E"; ctx.fillRect(0, 0, LARG, HAUT);
-  ctx.fillStyle = vg; ctx.fillRect(X0_4, Y0_4, COTE4, COTE4);
-
-  const pas = A.pas || 48, decal = (t * 13) % pas;
-  ctx.strokeStyle = "rgba(" + A.grille + ",.10)"; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = X0_4 + decal; x < X1_4; x += pas){ ctx.moveTo(x, Y0_4); ctx.lineTo(x, Y1_4); }
-  for (let y = Y0_4 + decal; y < Y1_4; y += pas){ ctx.moveTo(X0_4, y); ctx.lineTo(X1_4, y); }
-  ctx.stroke();
-
-  ctx.strokeStyle = "rgba(" + A.trait + ",.55)"; ctx.lineWidth = 2;
-  ctx.strokeRect(X0_4, Y0_4, COTE4, COTE4);
-  /* angles pleins, dessinés pour qu'on comprenne pourquoi la balle y rebondit */
-  ctx.fillStyle = "rgba(" + A.trait + ",.20)";
-  for (const cx of [X0_4, X1_4 - COIN4]) for (const cy of [Y0_4, Y1_4 - COIN4])
-    ctx.fillRect(cx, cy, COIN4, COIN4);
-
-  /* Bouches de but EN DERNIER : peintes avant, le cadre les recouvrait et on
-     ne distinguait plus à qui appartenait quel côté — vu à l'image. */
-  ctx.lineWidth = 5; ctx.lineCap = "round";
-  for (let i = 0; i < 4; i++){
-    const m = MURS4[i], bo = bornes4(m.axe);
-    ctx.strokeStyle = m.co;
-    ctx.globalAlpha = 0.55 + 0.45 * Math.max(0, flash4[i]);
-    ctx.beginPath();
-    if (m.axe === "x"){ ctx.moveTo(bo[0], m.plan); ctx.lineTo(bo[1], m.plan); }
-    else { ctx.moveTo(m.plan, bo[0]); ctx.lineTo(m.plan, bo[1]); }
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1; ctx.lineCap = "butt";
-
-  for (let i = 0; i < 4; i++){
-    const m = MURS4[i], b4 = barres4[i];
-    const e = m.plan + m.sens * (JEU4 + RAQ_H);
-    ctx.fillStyle = m.co;
-    if (m.axe === "x") ctx.fillRect(b4.pos - b4.taille/2, Math.min(e, e + m.sens*RAQ_H*-1), b4.taille, RAQ_H);
-    else ctx.fillRect(Math.min(e, e + m.sens*RAQ_H*-1), b4.pos - b4.taille/2, RAQ_H, b4.taille);
-    if (i === moi4){
-      ctx.fillStyle = "#EAF0FF";
-      if (m.axe === "x") ctx.fillRect(b4.pos - 8, e - m.sens*2 - (m.sens > 0 ? 0 : 2), 16, 2);
-      else ctx.fillRect(e - m.sens*2 - (m.sens > 0 ? 0 : 2), b4.pos - 8, 2, 16);
-    }
-  }
-
-  if (balle4){
-    ctx.fillStyle = CO_BALLE;
-    ctx.beginPath(); ctx.arc(balle4.x, balle4.y, BALLE_R, 0, 7); ctx.fill();
-  }
-
-  /* scores : deux par bande, chacun du côté de son joueur */
-  ctx.font = "700 30px system-ui, sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  const places = [
-    { i: 0, x: LARG/2, y: Y1_4 + 70 },
-    { i: 1, x: LARG/2, y: Y0_4 - 70 },
-    { i: 2, x: LARG*0.22, y: Y0_4 - 70 },
-    { i: 3, x: LARG*0.78, y: Y1_4 + 70 },
-  ];
-  for (const p of places){
-    ctx.fillStyle = MURS4[p.i].co;
-    ctx.fillText(String(scores4[p.i]), p.x, p.y);
-    ctx.font = "600 12px system-ui, sans-serif";
-    ctx.fillText(p.i === moi4 ? "VOUS" : "IA", p.x, p.y + 24);
-    ctx.font = "700 30px system-ui, sans-serif";
-  }
-  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-}
-
-/* ---------- entrée ----------
-   Le doigt commande la barre sur l'axe de SON mur : horizontal en haut et en
-   bas, vertical à gauche et à droite. */
-function pos4DepuisEvenement(clientX, clientY){
-  if (enPause || !barres4[moi4]) return;
-  const rect = cv.getBoundingClientRect(), m = MURS4[moi4];
-  const v = m.axe === "x"
-    ? (clientX - rect.left) / rect.width * LARG
-    : (clientY - rect.top) / rect.height * HAUT;
-  barres4[moi4].pos = borne4(m.axe, v, barres4[moi4].taille);
-}
-
 function boucle(){
   const maintenant = performance.now();
   const dtMs = horlogePrec ? Math.min(100, maintenant - horlogePrec) : PAS_MS;
@@ -4296,7 +3993,6 @@ function boucle(){
 function dessiner(){
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, LARG, HAUT);
-  if (mode4()){ dessinerQuatre(performance.now() / 1000); return; }
   preparerBloom();
   if (secousse > 0.2){
     ctx.translate((Math.random()-0.5)*secousse, (Math.random()-0.5)*secousse);

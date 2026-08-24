@@ -546,7 +546,7 @@ titre("8duodecies. Quatre modes : débordement, règles, coopératif");
     /\.rangSolo\{[^}]*flex-wrap:\s*wrap/.test(css),
     "à quatre modes, le dernier sortait de l'écran");
   const modes = [...html.matchAll(/data-mode="(\w+)"/g)].map(m => m[1]);
-  verifier("cinq modes déclarés", modes.length === 5, modes.join(", "));
+  verifier("quatre modes déclarés", modes.length === 4, modes.join(", "));
 }
 {
   const regles = [...html.matchAll(/data-modes="([^"]+)"><b class="[^"]*">([^<]+)</g)];
@@ -805,110 +805,6 @@ titre("11. Cohérence de MEMOIRE.md avec le code");
   verifier("CLAUDE.md du dépôt présent", consignes.length > 500);
   verifier("aucun secret dans les consignes",
     !/github_pat_|apiKey=|[A-Za-z0-9_-]{40,}/.test(consignes));
-}
-
-/* ======================= MODE À QUATRE ======================= */
-titre("N. Mode à quatre");
-{
-  const geo = new Function(
-    "const LARG=" + LARG + ", HAUT=" + HAUT + ", CADRE_X=" + CADRE_X +
-    ", RAQ_H=" + nombre("RAQ_H") + ", BALLE_R=" + BALLE_R +
-    ", VY_MIN=" + VY_MIN + ", VIT_MAX=" + VIT_MAX + ", ACCEL=" + nombre("ACCEL") + ";\n" +
-    extraire(/const COTE4 = LARG[\s\S]*?const VIT_IA4 = [\d.]+;/, "constantes du mode à quatre") + "\n" +
-    extraire(/const MURS4 = \[[\s\S]*?\n\];/, "MURS4") + "\n" +
-    extraire(/function bornes4\(axe\)\{[\s\S]*?\n\}/, "bornes4") + "\n" +
-    extraire(/function coord4\(axe, x, y\)\{.*?\n/, "coord4") +
-    extraire(/function borne4\(axe, pos, taille\)\{[\s\S]*?\n\}/, "borne4") + "\n" +
-    extraire(/function face4\(mur\)\{.*?\n/, "face4") +
-    extraire(/function murVise4\(vx, vy\)\{[\s\S]*?\n\}/, "murVise4") + "\n" +
-    extraire(/function frapper4\([\s\S]*?\n\}/, "frapper4") + "\n" +
-    "return { COTE4, X0_4, X1_4, Y0_4, Y1_4, COIN4, JEU4, BUT4, MURS4, bornes4, borne4, face4, murVise4, frapper4 };"
-  )();
-
-  verifier("l'aire de jeu est carrée",
-    Math.abs((geo.X1_4 - geo.X0_4) - (geo.Y1_4 - geo.Y0_4)) < 0.001,
-    (geo.X1_4 - geo.X0_4) + " x " + (geo.Y1_4 - geo.Y0_4));
-  verifier("le carré tient dans le canevas, bandes de score comprises",
-    geo.Y0_4 > 40 && geo.Y1_4 < HAUT - 40,
-    "bandes de " + geo.Y0_4 + " px");
-  verifier("les quatre murs sont distincts et couvrent les deux axes",
-    geo.MURS4.length === 4 &&
-    geo.MURS4.filter(m => m.axe === "x").length === 2 &&
-    geo.MURS4.filter(m => m.axe === "y").length === 2);
-  verifier("chaque mur renvoie vers l'intérieur",
-    geo.MURS4.every(m => {
-      const centre = m.axe === "x" ? (geo.Y0_4 + geo.Y1_4)/2 : (geo.X0_4 + geo.X1_4)/2;
-      return m.sens * (centre - m.plan) > 0;
-    }));
-  verifier("la face de frappe est en deçà de la ligne de but",
-    geo.MURS4.every(m => Math.abs(geo.face4(m) - m.plan) > BALLE_R));
-
-  /* Les angles doivent rester hors d'atteinte des barres, sinon deux barres
-     perpendiculaires se disputent le même pixel et la balle s'y coince. */
-  const RAQ_L = nombre("RAQ_L_BASE");
-  /* L'angle plein doit être plus épais que la bande occupée par une barre :
-     sinon la barre d'un mur dépasse dans la bouche de but de son voisin, et
-     la balle se coince entre deux barres perpendiculaires. */
-  verifier("une barre ne dépasse jamais dans la bouche du voisin",
-    geo.JEU4 + nombre("RAQ_H") <= geo.COIN4,
-    "bande de " + (geo.JEU4 + nombre("RAQ_H")) + " px pour un angle de " + geo.COIN4);
-  verifier("la bouche de but reste plus large que la barre",
-    geo.MURS4.every(m => (geo.bornes4(m.axe)[1] - geo.bornes4(m.axe)[0]) > RAQ_L * 2),
-    "bouche de " + (geo.bornes4("x")[1] - geo.bornes4("x")[0]) + " px pour une barre de " + RAQ_L);
-  verifier("une barre bornée reste dans sa bouche de but",
-    [-500, 0, 270, 9999].every(p => geo.MURS4.every(m => {
-      const q = geo.borne4(m.axe, p, RAQ_L), b = geo.bornes4(m.axe);
-      return q - RAQ_L/2 >= b[0] - 0.001 && q + RAQ_L/2 <= b[1] + 0.001;
-    })));
-
-  /* frapper4 : les deux invariants qui, pris à l'envers, ont déjà coûté cher
-     dans le jeu à deux — un plafond incohérent, et une balle qui rase le mur. */
-  let plafondOk = true, planchierOk = true, sensOk = true;
-  for (const m of geo.MURS4){
-    for (const o of [-1, -0.4, 0, 0.6, 1]){
-      for (const v of [3, 9, 40]){
-        const av = m.axe === "x" ? { vx: 2, vy: -m.sens * v } : { vx: -m.sens * v, vy: 2 };
-        const r = geo.frapper4(av.vx, av.vy, m.axe, m.sens, o);
-        const vitesse = Math.hypot(r.vx, r.vy);
-        const perp = m.axe === "x" ? r.vy : r.vx;
-        if (vitesse > VIT_MAX + 0.001) plafondOk = false;
-        if (Math.abs(perp) < VY_MIN - 0.001) planchierOk = false;
-        if (perp * m.sens <= 0) sensOk = false;
-      }
-    }
-  }
-  verifier("une frappe ne dépasse jamais le plafond de vitesse", plafondOk);
-  verifier("une frappe ne laisse jamais la balle raser le mur", planchierOk);
-  verifier("une frappe renvoie toujours vers l'intérieur", sensOk);
-
-  /* Le point revient au dernier frappeur : la fonction doit donc lire
-     b.dernier, et refuser de créditer celui qui encaisse. */
-  const src4 = extraire(/function but4\(encaisse\)\{[\s\S]*?\n\}/, "but4");
-  verifier("le point va au dernier frappeur", /marqueur\s*!==\s*encaisse/.test(src4));
-  verifier("une balle jamais touchée ne rapporte rien", /marqueur\s*>=\s*0/.test(src4));
-
-  /* Le service ne repart jamais vers celui qui vient d'encaisser. */
-  const srcServ = extraire(/function servir4\(sauf\)\{[\s\S]*?\n\}/, "servir4");
-  verifier("le service évite le joueur qui vient d'encaisser",
-    /murVise4\(vx, vy\) !== sauf/.test(srcServ));
-
-  /* Le mode à quatre n'emprunte rien à l'arcade. */
-  const cfg4 = (script.match(/quatre:\s*\{([^}]*)\}/) || [])[1] || "";
-  verifier("le mode à quatre n'a ni orbe, ni bloc, ni vice, ni dégât",
-    /bonus:\s*false/.test(cfg4) && /obstacles:\s*false/.test(cfg4) &&
-    /vices:\s*false/.test(cfg4) && /degats:\s*false/.test(cfg4));
-  verifier("le mode à quatre déclare ses quatre joueurs", /joueurs:\s*4/.test(cfg4));
-
-  /* Les décors peints sont taillés pour le 540 x 880 : le carré ne doit pas
-     les étirer. Le rendu du mode passe par le tracé procédural seul. */
-  const srcRendu = extraire(/function dessinerQuatre\(t\)\{[\s\S]*?\n\}/, "dessinerQuatre");
-  verifier("le mode à quatre ne peint aucun décor étiré",
-    !/drawImage/.test(srcRendu));
-
-  /* La physique du jeu à deux n'est pas traversée : elle est court-circuitée
-     en tête, sans quoi orbes, blocs et vices s'inviteraient. */
-  verifier("la physique à deux est court-circuitée",
-    /function physique\(\)\{\s*\n\s*if \(mode4\(\)\)\{ physiqueQuatre\(\); return; \}/.test(script));
 }
 
 /* ======================= RÉSULTAT ======================= */
