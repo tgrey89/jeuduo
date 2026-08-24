@@ -687,7 +687,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.3";
+const VERSION = "15.4";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -2395,7 +2395,11 @@ function envoyerPhoto(){
     monNom = assainirNom($("champNom").value);
     $("champNom").value = monNom;
     try{ localStorage.setItem("duo_nom", monNom); }catch(e){}
+    majVignette();
   });
+  /* Le monstre suit la frappe : c'est en le voyant changer qu'on comprend
+     qu'il sort du nom, et pas d'un tirage au sort. */
+  $("champNom").addEventListener("input", majVignette);
 })();
 function figerNom(){
   monNom = assainirNom($("champNom").value);

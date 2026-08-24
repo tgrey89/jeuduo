@@ -352,3 +352,4 @@ entre proches.
 | 15.1 | Le mot n'ouvre que la manche ; le cri s'enregistre depuis le menu, à côté de la photo |
 | 15.2 | Palmarès : victoires, taux, face-à-face agrégé avec titres ; avatars monstres procéduraux |
 | 15.3 | Retrait de la photo, retour au monstre, et propagation de l'absence à l'adversaire |
+| 15.4 | Le monstre se redessine à chaque frappe dans le champ du nom |

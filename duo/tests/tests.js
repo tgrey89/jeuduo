@@ -927,6 +927,13 @@ titre("N. Classements et avatars");
     /function retirerPhoto/.test(script) && /majVignette\(\)/.test(script));
 }
 
+{
+  verifier("le monstre suit le nom saisi",
+    /\$\("champNom"\)\.addEventListener\("input", majVignette\)/.test(script));
+  verifier("la vignette se refait quand le nom est validé",
+    /localStorage\.setItem\("duo_nom", monNom\); \}catch\(e\)\{\}\s*\n\s*majVignette\(\);/.test(script));
+}
+
 /* ======================= RÉSULTAT ======================= */
 console.log("\n" + "=".repeat(52));
 console.log("réussis : " + reussis + "   échoués : " + echoues);
