@@ -679,7 +679,6 @@ canvas{
     <div id="micEtat" class="cache">REC</div>
     <button id="btnPause" class="icone" aria-label="Pause"><span class="barresPause"></span></button>
     <div class="espace"></div>
-    <button id="btnMicToggle" class="icone eteint" aria-label="Micro">🎙</button>
   </div>
 </div>
 
@@ -687,7 +686,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "16.1";
+const VERSION = "16.2";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -1228,9 +1227,7 @@ function majIcones(){
     bp.classList.toggle("actif", enPause);
   }
   const bm = document.getElementById("btnMusique");
-  const bt = document.getElementById("btnMicToggle");
   if (bm){ bm.classList.toggle("actif", musiqueOn); bm.classList.toggle("eteint", !musiqueOn); }
-  if (bt){ bt.classList.toggle("actif", micActif); bt.classList.toggle("eteint", !micActif); }
 }
 /* ================= CRI DE VICTOIRE =================
    Un seul clip de 1,5 s enregistré AVANT la partie, rejoué à chaque point
@@ -2816,7 +2813,6 @@ function demarrerPartie(){
 /* ================= RÈGLES — double validation ================= */
 
 document.getElementById("btnMusique").addEventListener("click", basculerMusique);
-document.getElementById("btnMicToggle").addEventListener("click", enregistrerCri);
 
 $("btnPlus").addEventListener("click", () => {
   const l = $("reglesListe"), ouvert = !l.classList.contains("cache");
@@ -4240,6 +4236,7 @@ function boucle(){
       pas++;
     }
     if (pas === 5) accumulateur = 0;   /* rattrapage borné après une longue pause */
+    fractionPas = Math.max(0, Math.min(1, accumulateur / PAS_MS));
   } else if (phase === "jeu"){
     const dt = (performance.now() - cibleT) / (1000/60);
     for (let i = 0; i < balles.length && i < cibles.length; i++){
@@ -4255,6 +4252,16 @@ function boucle(){
 
   dessiner();
   if (partieEnCours) requestAnimationFrame(boucle);
+}
+
+/* Fraction du pas de physique déjà écoulée au moment où l'on dessine. */
+let fractionPas = 0;
+function positionInterpolee(b){
+  if (!estHote || fractionPas <= 0 || phase !== "jeu") return b;
+  /* Bornée au terrain : sur une frappe, extrapoler ferait mordre la raquette. */
+  const x = Math.max(0, Math.min(LARG, b.x + (b.vx || 0) * fractionPas));
+  const y = Math.max(-40, Math.min(HAUT + 40, b.y + (b.vy || 0) * fractionPas));
+  return { x: x, y: y, vx: b.vx, vy: b.vy, spin: b.spin, tPuits: b.tPuits, tArc: b.tArc };
 }
 
 function dessiner(){
@@ -4402,7 +4409,11 @@ function dessiner(){
   while (traines.length < balles.length) traines.push([]);
   while (traines.length > balles.length) traines.pop();
   for (let i = 0; i < balles.length; i++){
-    const b = balles[i], tr = traines[i];
+    const brut = balles[i], tr = traines[i];
+    /* La physique avance par pas fixes de 16,7 ms, l'écran peut rafraîchir à
+       120 Hz : sans ça, la balle est dessinée deux fois au même endroit, puis
+       saute. On la place à sa position réelle dans le pas en cours. */
+    const b = positionInterpolee(brut);
     if (phase === "jeu"){ tr.push({ x: b.x, y: b.y }); if (tr.length > 24) tr.shift(); }
     else tr.length = 0;
 

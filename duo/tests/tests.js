@@ -850,8 +850,10 @@ titre("N. Cri de victoire et décompte");
   verifier("le cri dure bien 1,5 s", nombre("DUREE_CRI") === 1500);
   verifier("la parole après chaque point a bien disparu",
     !/enregistrerEtEnvoyer/.test(script) && !/basculerMicro/.test(script));
-  verifier("le bouton micro enregistre le cri",
-    /btnMicToggle"\)\.addEventListener\("click", enregistrerCri\)/.test(script));
+  /* L'icône micro en plein match n'avait plus d'objet une fois le cri
+     enregistrable depuis le menu : elle occupait un coin de l'écran pour rien. */
+  verifier("l'icône micro a disparu du jeu",
+    !/btnMicToggle/.test(html) && !/btnMicToggle/.test(script));
   /* Le cri doit être proposé là où l'on prépare sa partie, pas seulement
      derrière une icône en cours de jeu que personne ne remarque. */
   verifier("le menu principal propose d'enregistrer un cri",
@@ -990,6 +992,30 @@ titre("N. Classements et avatars");
     /localStorage\.setItem\("duo_schema", String\(SCHEMA\)\)/.test(script));
   verifier("c'est moi qui suis surligné, par identifiant",
     /moi: i === monId\(\)/.test(script) && !/r\.nom === monNom\.toUpperCase\(\)/.test(script));
+}
+
+{
+  /* La physique avance par pas fixes ; l'écran peut aller à 120 Hz. Sans
+     interpolation, la balle est peinte deux fois au même endroit puis saute. */
+  const interp = new Function("estHote", "phase", "fractionPas", "LARG", "HAUT",
+    extraire(/function positionInterpolee\(b\)\{[\s\S]*?\n\}/, "positionInterpolee") +
+    "; return positionInterpolee;");
+  const p1 = interp(true, "jeu", 0.5, 540, 880)({ x: 100, y: 100, vx: 10, vy: -8 });
+  verifier("la balle est peinte à sa position réelle dans le pas en cours",
+    Math.abs(p1.x - 105) < 0.001 && Math.abs(p1.y - 96) < 0.001);
+  const p2 = interp(true, "jeu", 0, 540, 880);
+  const b0 = { x: 1, y: 2, vx: 3, vy: 4 };
+  verifier("sans fraction écoulée, rien n'est déplacé", p2(b0) === b0);
+  /* L'invité interpole déjà vers l'état reçu : l'empiler dessus le ferait
+     dériver au-delà de la position que l'hôte fait autorité. */
+  verifier("l'invité n'interpole pas deux fois",
+    interp(false, "jeu", 0.9, 540, 880)(b0) === b0);
+  verifier("hors jeu, la balle ne bouge pas toute seule",
+    interp(true, "compte", 0.9, 540, 880)(b0) === b0);
+  const p3 = interp(true, "jeu", 1, 540, 880)({ x: 535, y: 100, vx: 40, vy: 0 });
+  verifier("l'extrapolation ne sort jamais du terrain", p3.x <= 540);
+  verifier("la fraction de pas est bornée à un pas",
+    /fractionPas = Math\.max\(0, Math\.min\(1, accumulateur \/ PAS_MS\)\)/.test(script));
 }
 
 /* ======================= RÉSULTAT ======================= */
