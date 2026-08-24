@@ -469,6 +469,7 @@ canvas{
     <div class="rangPhoto">
       <div id="apercuPhoto" class="vignette">?</div>
       <button id="btnPhoto" class="secondaire">Prendre une photo</button>
+      <button id="btnRetirerPhoto" class="secondaire" style="display:none" aria-label="Retirer la photo">✕</button>
     </div>
     <div class="rangPhoto">
       <div id="apercuCri" class="vignette">🎙</div>
@@ -686,7 +687,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "15.2";
+const VERSION = "15.3";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -1297,7 +1298,7 @@ function jouerCri(q){
 
 function recevoirFiable(m){
   if (!m) return;
-  if (m.t === "ph" && m.d){ photoAdverse = m.d; return; }
+  if (m.t === "ph"){ photoAdverse = m.d || null; return; }
   if (m.t === "cri" && m.d){ criAdverse = { mt: m.mt || "audio/webm", buf: m.d }; return; }
   if (m.t !== "vx"){ recevoir(m); return; }   /* contrôle : même traitement */
   if (!m.d) return;
@@ -2329,6 +2330,21 @@ function texteDuels(){
 let maPhoto = null, photoAdverse = null, fluxCam = null;
 function majVignette(){
   poserAvatar($("apercuPhoto"), maPhoto, monNom || $("champNom").value || "JOUEUR");
+  const b = $("btnPhoto"), r = $("btnRetirerPhoto");
+  if (b) b.textContent = maPhoto ? "Changer la photo" : "Prendre une photo";
+  if (r) r.style.display = maPhoto ? "" : "none";
+}
+
+/* Retirer la photo ne laisse pas un trou : on retombe sur le monstre du nom.
+   L'adversaire déjà connecté garde l'ancienne image jusqu'au prochain envoi,
+   d'où le renvoi immédiat. */
+function retirerPhoto(){
+  if (!maPhoto) return;
+  maPhoto = null;
+  try{ localStorage.removeItem("duo_photo"); }catch(e){}
+  majVignette();
+  envoyerPhoto();
+  annoncer("PHOTO RETIRÉE · MONSTRE PAR DÉFAUT", "#8AB4FF");
 }
 (function initPhoto(){
   try{ const m = localStorage.getItem("duo_photo"); if (m) maPhoto = m; }catch(e){}
@@ -2348,6 +2364,7 @@ function fermerCamera(){
   if (fluxCam){ fluxCam.getTracks().forEach(p => p.stop()); fluxCam = null; }
 }
 $("btnAnnulerPhoto").addEventListener("click", fermerCamera);
+$("btnRetirerPhoto").addEventListener("click", retirerPhoto);
 $("btnCriMenu").addEventListener("click", enregistrerCri);
 $("btnCapturer").addEventListener("click", () => {
   const v = $("fluxPhoto");
@@ -2365,8 +2382,10 @@ $("btnCapturer").addEventListener("click", () => {
   envoyerPhoto();
 });
 function envoyerPhoto(){
-  if (maPhoto && connVoix && connVoix.open){
-    try{ connVoix.send({ t: "ph", d: maPhoto }); }catch(e){}
+  /* On envoie aussi l'absence de photo : sans ça, retirer la sienne en cours
+     de partie laisse l'adversaire avec l'ancienne image, définitivement. */
+  if (connVoix && connVoix.open){
+    try{ connVoix.send({ t: "ph", d: maPhoto || null }); }catch(e){}
   }
 }
 

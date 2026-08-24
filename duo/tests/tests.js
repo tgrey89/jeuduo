@@ -912,6 +912,21 @@ titre("N. Classements et avatars");
     /if \(!modeSolo\) noterPartie\(jAiGagne\)/.test(script));
 }
 
+{
+  verifier("le menu permet de retirer une photo existante",
+    /id="btnRetirerPhoto"/.test(html) &&
+    /btnRetirerPhoto"\)\.addEventListener\("click", retirerPhoto\)/.test(script));
+  verifier("le bouton de retrait ne s'affiche que s'il y a une photo",
+    /r\.style\.display = maPhoto \? "" : "none"/.test(script));
+  /* Retirer sa photo doit se propager : sinon l'adversaire garde l'ancienne
+     image pour toujours, l'envoi étant conditionné à sa présence. */
+  verifier("l'absence de photo est envoyée à l'adversaire",
+    /connVoix\.send\(\{ t: "ph", d: maPhoto \|\| null \}\)/.test(script) &&
+    /m\.t === "ph"\)\{ photoAdverse = m\.d \|\| null/.test(script));
+  verifier("sans photo, le monstre prend le relais",
+    /function retirerPhoto/.test(script) && /majVignette\(\)/.test(script));
+}
+
 /* ======================= RÉSULTAT ======================= */
 console.log("\n" + "=".repeat(52));
 console.log("réussis : " + reussis + "   échoués : " + echoues);
