@@ -972,8 +972,8 @@ titre("N. Classements et avatars");
   verifier("le palmarès s'indexe sur l'identifiant, pas sur le nom",
     /function fusionnerPalmares\(id, nom, records\)/.test(script) &&
     /const cleId = String\(id \|\| ""\)/.test(script));
-  verifier("le nom est remplacé, jamais fusionné",
-    /a\.nom = \(nom \|\| a\.nom \|\| "JOUEUR"\)/.test(script));
+  verifier("le nom est une étiquette remplaçable, pas une valeur fusionnée",
+    /if \(propose && propose !== "JOUEUR"\) a\.nom = propose;/.test(script));
   verifier("le compteur de duels s'indexe sur l'identifiant",
     /return idAdverse \? "duo_duels_" \+ idAdverse : null/.test(script));
   verifier("l'identifiant voyage dans les deux sens de la poignée de main",
@@ -1045,6 +1045,30 @@ titre("N. Classements et avatars");
      script ne le remplace. */
   verifier("aucun numéro de version en dur dans la page",
     !/id="version">DUO v[0-9]/.test(html));
+}
+
+{
+  /* inscrireMesRecords() tourne au chargement. Si monNom n'est pas restauré
+     du stockage, il vaut « JOUEUR », et comme le nom est remplacé, chaque
+     rechargement écrasait le vrai nom du palmarès. */
+  verifier("le nom mémorisé est restauré dans monNom, pas seulement dans le champ",
+    /if \(memo\)\{ \$\("champNom"\)\.value = memo; monNom = assainirNom\(memo\); \}/.test(script));
+  verifier("le nom par défaut n'écrase jamais un vrai nom",
+    /if \(propose && propose !== "JOUEUR"\) a\.nom = propose;/.test(script));
+
+  const fus = new Function("lirePalmares", "ecrirePalmares",
+    extraire(/function fusionnerPalmares\(id, nom, records\)\{[\s\S]*?\n\}/, "fusionnerPalmares") +
+    "; return fusionnerPalmares;");
+  let base = {};
+  const f = fus(() => base, o => { base = o; });
+  f("j1", "THIBAUT", { v: 3, j: 5 });
+  f("j1", "JOUEUR", { v: 3, j: 5 });
+  verifier("un rechargement ne dégrade pas le nom en JOUEUR",
+    base.j1.nom === "THIBAUT", base.j1.nom);
+  f("j1", "TIBO", { v: 4, j: 6 });
+  verifier("se renommer met bien l'étiquette à jour", base.j1.nom === "TIBO", base.j1.nom);
+  verifier("un inconnu sans nom garde quand même une étiquette",
+    (f("j9", "", { v: 1, j: 1 }), base.j9.nom === "JOUEUR"), JSON.stringify(base.j9));
 }
 
 /* ======================= RÉSULTAT ======================= */

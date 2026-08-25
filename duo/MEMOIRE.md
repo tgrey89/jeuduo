@@ -357,3 +357,4 @@ entre proches.
 | 16.1 | Monstre lisible : couleur par initiale, yeux par voyelles, cornes par dernière lettre |
 | 16.2 | Icône micro retirée du jeu ; balle interpolée dans le pas de physique pour les écrans 120 Hz |
 | 16.3 | Lien et défi : retour sur le bouton, feuille de partage iOS, plus de sortie silencieuse |
+| 16.4 | Le nom mémorisé est restauré dans monNom ; « JOUEUR » n'écrase plus un vrai nom au palmarès |

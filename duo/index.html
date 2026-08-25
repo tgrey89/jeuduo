@@ -688,7 +688,7 @@ canvas{
 "use strict";
 
 /* ================= CONFIG ================= */
-const VERSION = "16.3";
+const VERSION = "16.4";
 const LARG = 540, HAUT = 880;   /* rapport 0,614 : épouse la hauteur réellement
                                    disponible sur un iPhone en Safari, contre
                                    0,75 auparavant où 130 pt restaient inutilisés */
@@ -2307,9 +2307,12 @@ function fusionnerPalmares(id, nom, records){
   const a = p[cleId] || {};
   for (const cle of ["echange", "serie", "remontee", "relais", "v", "j"])
     a[cle] = Math.max(a[cle] || 0, records[cle] || 0);
-  /* Le nom, lui, n'est pas fusionné mais remplacé : c'est une étiquette, et
-     la dernière connue est la bonne. */
-  a.nom = (nom || a.nom || "JOUEUR").trim().slice(0, 14).toUpperCase();
+  /* Le nom est une étiquette : la dernière connue fait foi. Mais le nom PAR
+     DÉFAUT n'est pas une information — l'écrire par-dessus un vrai nom, c'est
+     le perdre. On ne remplace donc que par autre chose que le repli. */
+  const propose = String(nom || "").trim().slice(0, 14).toUpperCase();
+  if (propose && propose !== "JOUEUR") a.nom = propose;
+  else if (!a.nom) a.nom = propose || "JOUEUR";
   a.maj = Date.now();
   p[cleId] = a;
   ecrirePalmares(p);
@@ -2451,7 +2454,13 @@ function envoyerPhoto(){
 }
 
 (function initNom(){
-  try{ const memo = localStorage.getItem("duo_nom"); if (memo) $("champNom").value = memo; }catch(e){}
+  /* Remplir le champ ne suffisait pas : monNom restait à sa valeur par défaut,
+     et inscrireMesRecords(), qui tourne au chargement, réécrasait le vrai nom
+     du palmarès par « JOUEUR » à CHAQUE rechargement. */
+  try{
+    const memo = localStorage.getItem("duo_nom");
+    if (memo){ $("champNom").value = memo; monNom = assainirNom(memo); }
+  }catch(e){}
   $("champNom").addEventListener("change", () => {
     monNom = assainirNom($("champNom").value);
     $("champNom").value = monNom;
